@@ -17,28 +17,36 @@ export default function UploadPage({ candidateName, recordId, error }: Props) {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setStatus('');
+    setStatus('Uploading...');
     setUploadError('');
 
     const formData = new FormData(e.currentTarget);
     formData.append('recordId', recordId);
 
     try {
-      setStatus('Uploading...');
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Upload failed');
+        let errorMessage = 'Upload failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonError) {
+          // Handle non-JSON responses
+          const errorText = await response.text();
+          errorMessage = errorText || 'An unexpected error occurred';
+        }
+        throw new Error(errorMessage);
       }
 
-      setStatus('Documents uploaded successfully! Your onboarding status has been updated.');
-    } catch (err: unknown) { // Changed 'any' to 'unknown'
-      // Safely access error message
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      const data = await response.json();
+      setStatus(data.message || 'Documents uploaded successfully! Your onboarding status has been updated.');
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      console.error('Upload Error:', errorMessage);
       setUploadError(errorMessage);
     }
   };
@@ -80,7 +88,8 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     });
 
     if (!response.ok) {
-      throw new Error('Record not found');
+      const errorText = await response.text();
+      throw new Error(`Airtable fetch failed: ${errorText || 'Record not found'}`);
     }
 
     const data = await response.json();

@@ -18,22 +18,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   // Initialize formidable with uploadDir
   const uploadDir = path.join(process.cwd(), 'tmp');
   await fs.mkdir(uploadDir, { recursive: true });
-  const form = formidable({ multiples: true, uploadDir }); // Set uploadDir here
+  const form = formidable({ multiples: true, uploadDir });
   const maxFileSize = 5 * 1024 * 1024; // 5MB limit for Airtable
 
   const filesToDelete: string[] = [];
 
   try {
+    // Validate environment variables
+    const requiredEnvVars = [
+      'BLOB_READ_WRITE_TOKEN',
+      'AIRTABLE_TOKEN',
+      'AIRTABLE_BASE_ID',
+      'AIRTABLE_TABLE_ID',
+      'AIRTABLE_IDENTITY_PROOF_FIELD_ID',
+      'AIRTABLE_ADDRESS_PROOF_FIELD_ID',
+      'AIRTABLE_OFFER_LETTER_FIELD_ID',
+    ];
+    for (const envVar of requiredEnvVars) {
+      if (!process.env[envVar]) {
+        throw new Error(`Missing environment variable: ${envVar}`);
+      }
+    }
+
     const [fields, files] = await new Promise<[formidable.Fields, formidable.Files]>((resolve, reject) => {
       form.parse(req, (err, fields, files) => {
-        if (err) reject(err);
+        if (err) reject(new Error(`Form parsing failed: ${err.message}`));
         resolve([fields, files]);
       });
     });
 
     const recordId = fields.recordId?.[0];
     if (!recordId) {
-      throw new Error('Missing recordId');
+      throw new Error('Missing recordId in form data');
     }
 
     const fileKeys = ['identityProof', 'addressProof', 'offerLetter'];
@@ -55,13 +71,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       filesToDelete.push(file.filepath);
 
+      // Use original filename or fallback to key, without prepending recordId
+      const filename = file.originalFilename || `${key}.pdf`;
+
       // Upload to Vercel Blob
-      const blob = await put(file.originalFilename || key, await fs.readFile(file.filepath), {
+      const blob = await put(filename, await fs.readFile(file.filepath), {
         access: 'public',
         token: process.env.BLOB_READ_WRITE_TOKEN_READ_WRITE_TOKEN,
       });
 
-      attachments[key] = { filename: file.originalFilename || key, url: blob.url };
+      attachments[key] = { filename, url: blob.url };
     }
 
     // Update the Airtable record with each file in its respective field
@@ -86,14 +105,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     );
 
     if (!patchResponse.ok) {
-      const errorData = await patchResponse.json();
-      throw new Error(`Record update failed: ${errorData.error?.message || 'Unknown error'}`);
+      const errorData = await patchResponse.text(); // Use text() to avoid JSON parsing issues
+      throw new Error(`Airtable update failed: ${errorData || 'Unknown error'}`);
     }
 
-    res.status(200).json({ success: true });
-  } catch (err: unknown) { // Changed 'Error' to 'unknown'
-    // Safely access error message
-    const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+    res.status(200).json({ success: true, message: 'Documents uploaded and Airtable updated successfully' });
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+    console.error('Upload API Error:', errorMessage);
     res.status(500).json({ error: errorMessage });
   } finally {
     // Clean up temporary files
