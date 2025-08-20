@@ -1,4 +1,3 @@
-// pages/upload/[recordId].tsx
 import { GetServerSideProps } from 'next';
 import { useState } from 'react';
 
@@ -37,8 +36,10 @@ export default function UploadPage({ candidateName, recordId, error }: Props) {
       }
 
       setStatus('Documents uploaded successfully! Your onboarding status has been updated.');
-    } catch (err: any) {
-      setUploadError(err.message);
+    } catch (err: unknown) { // Changed 'any' to 'unknown'
+      // Safely access error message
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setUploadError(errorMessage);
     }
   };
 
@@ -86,7 +87,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     const candidateName = data.fields.Name || 'Candidate';
 
     return { props: { candidateName, recordId } };
-  } catch (err) {
+  } catch (_err) {
     return { props: { error: 'Failed to load candidate details. Please check your Record ID.' } };
   }
 };

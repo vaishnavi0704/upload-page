@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const form = formidable({ multiples: true, uploadDir }); // Set uploadDir here
   const maxFileSize = 5 * 1024 * 1024; // 5MB limit for Airtable
 
-  let filesToDelete: string[] = [];
+  const filesToDelete: string[] = [];
 
   try {
     const [fields, files] = await new Promise<[formidable.Fields, formidable.Files]>((resolve, reject) => {
@@ -91,8 +91,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     res.status(200).json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) { // Changed 'Error' to 'unknown'
+    // Safely access error message
+    const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+    res.status(500).json({ error: errorMessage });
   } finally {
     // Clean up temporary files
     await Promise.all(filesToDelete.map(filePath => fs.unlink(filePath).catch(() => {})));
