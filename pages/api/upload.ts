@@ -26,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // Validate environment variables
     const requiredEnvVars = [
-      'BLOB_READ_WRITE_TOKEN',
+      'BLOB_READ_WRITE_TOKEN_READ_WRITE_TOKEN',
       'AIRTABLE_TOKEN',
       'AIRTABLE_BASE_ID',
       'AIRTABLE_TABLE_ID',
