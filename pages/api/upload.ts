@@ -26,7 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // Validate environment variables
     const requiredEnvVars = [
-      'BLOB_READ_WRITE_TOKEN_READ_WRITE_TOKEN',
+      'BLOB_READ_WRITE_TOKEN',
       'AIRTABLE_TOKEN',
       'AIRTABLE_BASE_ID',
       'AIRTABLE_TABLE_ID',
@@ -77,7 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Upload to Vercel Blob
       const blob = await put(filename, await fs.readFile(file.filepath), {
         access: 'public',
-        token: process.env.BLOB_READ_WRITE_TOKEN_READ_WRITE_TOKEN,
+        token: process.env.BLOB_READ_WRITE_TOKEN,
       });
 
       attachments[key] = { filename, url: blob.url };
