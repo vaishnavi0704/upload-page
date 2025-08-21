@@ -3,30 +3,7 @@ import formidable from 'formidable';
 import fs from 'fs/promises';
 import path from 'path';
 import { put } from '@vercel/blob';
-
-// Define response type
-interface ApiResponse {
-  success: boolean;
-  message?: string;
-  error?: string;
-}
-
-// Augment ProcessEnv (ensure next-env.d.ts is configured)
-interface EnvVars {
-  BLOB_READ_WRITE_TOKEN: string;
-  AIRTABLE_TOKEN: string;
-  AIRTABLE_BASE_ID: string;
-  AIRTABLE_TABLE_ID: string;
-  AIRTABLE_IDENTITY_PROOF_FIELD_ID: string;
-  AIRTABLE_ADDRESS_PROOF_FIELD_ID: string;
-  AIRTABLE_OFFER_LETTER_FIELD_ID: string;
-}
-
-declare global {
-  namespace NodeJS {
-    interface ProcessEnv extends EnvVars {}
-  }
-}
+import os from 'os';
 
 export const config = {
   api: {
@@ -34,30 +11,22 @@ export const config = {
   },
 };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResponse>) {
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  console.log('=== Upload API Called ===');
+  console.log('Method:', req.method);
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+    console.log('❌ Method not allowed:', req.method);
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const uploadDir = path.join(process.cwd(), 'tmp');
-  await fs.mkdir(uploadDir, { recursive: true });
-
-  const form = formidable({
-    uploadDir,
-    multiples: true,
-    maxFileSize: 5 * 1024 * 1024,
-    maxFiles: 3,
-    maxFields: 10,
-    keepExtensions: true,
-  });
-
-  const validMimeTypes = ['application/pdf', 'application/octet-stream'];
-  const validExtensions = ['.pdf'];
   const filesToDelete: string[] = [];
 
   try {
-    // Validate environment variables
-    const requiredEnvVars: (keyof EnvVars)[] = [
+    // ✅ Check environment variables first
+    console.log('🔍 Checking environment variables...');
+    const requiredEnvVars = [
       'BLOB_READ_WRITE_TOKEN',
       'AIRTABLE_TOKEN',
       'AIRTABLE_BASE_ID',
@@ -66,159 +35,229 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       'AIRTABLE_ADDRESS_PROOF_FIELD_ID',
       'AIRTABLE_OFFER_LETTER_FIELD_ID',
     ];
-    for (const envVar of requiredEnvVars) {
-      if (!process.env[envVar]) {
-        throw new Error(`Missing environment variable: ${envVar}`);
-      }
+    
+    const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+    if (missingEnvVars.length > 0) {
+      console.error('❌ Missing environment variables:', missingEnvVars);
+      return res.status(500).json({ 
+        error: 'Server configuration error',
+        details: `Missing environment variables: ${missingEnvVars.join(', ')}`
+      });
+    }
+    console.log('✅ All environment variables present');
+
+    // ✅ Use OS temp directory for Vercel compatibility
+    const uploadDir = path.join(os.tmpdir(), 'uploads');
+    console.log('📁 Upload directory:', uploadDir);
+    
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+      console.log('✅ Upload directory created/verified');
+    } catch (dirError) {
+      console.error('❌ Failed to create upload directory:', dirError);
+      return res.status(500).json({ error: 'Failed to create upload directory' });
     }
 
-    if (!process.env.AIRTABLE_BASE_ID.startsWith('app')) {
-      throw new Error('Invalid AIRTABLE_BASE_ID: Must start with "app"');
-    }
+    // ✅ Configure formidable with better error handling
+    const form = formidable({ 
+      multiples: true, 
+      uploadDir,
+      maxFileSize: 10 * 1024 * 1024, // 10MB limit
+      keepExtensions: true,
+      allowEmptyFiles: false,
+    });
 
+    console.log('📋 Parsing form data...');
+    
+    // ✅ Parse form with better error handling
     const [fields, files] = await new Promise<[formidable.Fields, formidable.Files]>((resolve, reject) => {
       form.parse(req, (err, fields, files) => {
         if (err) {
-          console.error('Formidable parsing error:', err);
-          if (err.httpCode === 413) {
-            reject(new Error('File size exceeds 5MB limit'));
-          } else if (err.httpCode === 400) {
-            reject(new Error('Invalid form data'));
-          } else {
-            reject(new Error(`Form parsing failed: ${err.message}`));
-          }
+          console.error('❌ Form parsing error:', err);
+          reject(new Error(`Form parsing failed: ${err.message}`));
+        } else {
+          console.log('✅ Form parsed successfully');
+          console.log('Fields received:', Object.keys(fields));
+          console.log('Files received:', Object.keys(files));
+          resolve([fields, files]);
         }
-        resolve([fields, files]);
       });
     });
 
-    const recordId = fields.recordId?.[0];
-    if (!recordId || typeof recordId !== 'string' || !/^rec[a-zA-Z0-9]{14}$/.test(recordId)) {
-      throw new Error('Invalid or missing recordId: Must be an Airtable record ID (e.g., rec12345678901234)');
+    // ✅ Extract recordId with better validation
+    const recordId = Array.isArray(fields.recordId) ? fields.recordId[0] : fields.recordId;
+    console.log('📝 Record ID:', recordId);
+    
+    if (!recordId || typeof recordId !== 'string') {
+      console.error('❌ Invalid recordId:', recordId);
+      return res.status(400).json({ error: 'Missing or invalid recordId in form data' });
     }
 
+    // ✅ Validate all required files
     const fileKeys = ['identityProof', 'addressProof', 'offerLetter'];
+    console.log('🔍 Validating required files...');
+    
     for (const key of fileKeys) {
-      const file = files[key]?.[0] as formidable.File | undefined;
+      const file = Array.isArray(files[key]) ? files[key]?.[0] : files[key];
       if (!file) {
-        throw new Error(`Missing file for ${key}`);
+        console.error(`❌ Missing file for ${key}`);
+        return res.status(400).json({ error: `Missing file for ${key}` });
       }
-      const extension = path.extname(file.originalFilename || '').toLowerCase();
-      if (!file.mimetype || (!validMimeTypes.includes(file.mimetype) && !validExtensions.includes(extension))) {
-        throw new Error(`Invalid file type for ${key}. Only PDFs are allowed.`);
-      }
-      filesToDelete.push(file.filepath);
+      console.log(`✅ File found for ${key}:`, (file as formidable.File).originalFilename);
     }
 
+    // ✅ Upload files to Vercel Blob
+    console.log('☁️ Starting file uploads to Vercel Blob...');
     const attachments: { [key: string]: { filename: string; url: string } } = {};
 
     for (const key of fileKeys) {
-      const file = files[key]![0] as formidable.File;
-      const filename = `${recordId}_${key}.pdf`;
-
       try {
-        await fs.access(file.filepath, fs.constants.R_OK);
-      } catch {
-        throw new Error(`Cannot access file for ${key} at ${file.filepath}`);
+        const file = (Array.isArray(files[key]) ? files[key]?.[0] : files[key]) as formidable.File;
+        
+        console.log(`📤 Uploading ${key}:`, {
+          originalFilename: file.originalFilename,
+          size: file.size,
+          mimetype: file.mimetype
+        });
+
+        // Add to cleanup list
+        filesToDelete.push(file.filepath);
+
+        // Create unique filename
+        const timestamp = Date.now();
+        const originalName = file.originalFilename || `${key}.pdf`;
+        const fileExtension = path.extname(originalName);
+        const baseName = path.basename(originalName, fileExtension);
+        const filename = `${recordId}_${key}_${timestamp}_${baseName}${fileExtension}`;
+
+        // Read file and upload to blob
+        const fileBuffer = await fs.readFile(file.filepath);
+        console.log(`📖 File read successfully, size: ${fileBuffer.length} bytes`);
+
+        const blob = await put(filename, fileBuffer, {
+          access: 'public',
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+          addRandomSuffix: true,
+        });
+
+        attachments[key] = { filename, url: blob.url };
+        console.log(`✅ ${key} uploaded successfully:`, blob.url);
+
+      } catch (uploadError) {
+        console.error(`❌ Failed to upload ${key}:`, uploadError);
+        throw new Error(`Failed to upload ${key}: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`);
       }
-
-      const fileBuffer = await fs.readFile(file.filepath);
-      const blob = await put(filename, fileBuffer, {
-        access: 'public',
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
-
-      if (!blob.url || !blob.pathname) {
-        throw new Error(`Failed to upload ${filename} to Vercel Blob: Invalid response`);
-      }
-
-      console.log(`Uploaded ${filename} to Vercel Blob: ${blob.url} (pathname: ${blob.pathname})`);
-      attachments[key] = { filename, url: blob.url };
     }
 
-    // Retry logic for Airtable
-    const maxRetries = 3;
-    const retryDelay = 1000;
+    console.log('✅ All files uploaded to Vercel Blob');
+    console.log('📎 Attachment URLs:', attachments);
 
-    async function fetchWithRetry(url: string, options: RequestInit, retries: number = maxRetries): Promise<Response> {
-      for (let i = 0; i < retries; i++) {
-        const response = await fetch(url, options);
-        if (response.status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, retryDelay * Math.pow(2, i)));
-          continue;
-        }
-        return response;
-      }
-      throw new Error('Airtable API rate limit exceeded after retries');
-    }
+    // ✅ Update Airtable with detailed logging
+    console.log('📋 Preparing Airtable update...');
+    
+    const airtablePayload = {
+      fields: {
+        [process.env.AIRTABLE_IDENTITY_PROOF_FIELD_ID!]: [{ 
+          url: attachments.identityProof.url,
+          filename: attachments.identityProof.filename 
+        }],
+        [process.env.AIRTABLE_ADDRESS_PROOF_FIELD_ID!]: [{ 
+          url: attachments.addressProof.url,
+          filename: attachments.addressProof.filename 
+        }],
+        [process.env.AIRTABLE_OFFER_LETTER_FIELD_ID!]: [{ 
+          url: attachments.offerLetter.url,
+          filename: attachments.offerLetter.filename 
+        }],
+        DocumentsSubmitted: true,
+        Status: 'Documents Submitted',
+      },
+    };
 
-    // Verify Airtable record exists
-    const checkResponse = await fetchWithRetry(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}/${recordId}`,
-      {
-        headers: { Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}` },
-      }
-    );
-    if (!checkResponse.ok) {
-      const errorData = await checkResponse.text();
-      throw new Error(`Airtable record check failed: ${errorData}`);
-    }
+    console.log('📤 Airtable payload:', JSON.stringify(airtablePayload, null, 2));
 
-    // Update Airtable record
-    const patchResponse = await fetchWithRetry(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}/${recordId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          fields: {
-            [process.env.AIRTABLE_IDENTITY_PROOF_FIELD_ID]: [{ url: attachments.identityProof.url }],
-            [process.env.AIRTABLE_ADDRESS_PROOF_FIELD_ID]: [{ url: attachments.addressProof.url }],
-            [process.env.AIRTABLE_OFFER_LETTER_FIELD_ID]: [{ url: attachments.offerLetter.url }],
-            DocumentsSubmitted: true,
-            Status: 'Documents Submitted',
-          },
-        }),
-      }
-    );
+    const airtableUrl = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_ID}/${recordId}`;
+    console.log('🔗 Airtable URL:', airtableUrl);
 
+    const patchResponse = await fetch(airtableUrl, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(airtablePayload),
+    });
+
+    console.log('📡 Airtable response status:', patchResponse.status, patchResponse.statusText);
+
+    // ✅ Handle Airtable response
+    const responseText = await patchResponse.text();
+    console.log('📄 Airtable response body:', responseText);
+    
     if (!patchResponse.ok) {
-      const errorData = await patchResponse.text();
-      let errorMessage = errorData;
-      try {
-        errorMessage = JSON.parse(errorData).error?.message || errorData;
-      } catch {
-        // Use raw text if JSON parsing fails
-      }
-      throw new Error(`Airtable update failed: ${errorMessage}`);
+      console.error('❌ Airtable update failed:', {
+        status: patchResponse.status,
+        statusText: patchResponse.statusText,
+        body: responseText,
+      });
+      
+      return res.status(500).json({
+        error: 'Failed to update Airtable',
+        details: `Status: ${patchResponse.status}, Response: ${responseText}`,
+        attachments: Object.keys(attachments).reduce((acc, key) => {
+          acc[key] = attachments[key].url;
+          return acc;
+        }, {} as { [key: string]: string }),
+      });
     }
 
-    const responseData = await patchResponse.json();
-    if (!responseData.id || responseData.id !== recordId) {
-      throw new Error('Airtable update failed: Invalid response or record ID mismatch');
+    // ✅ Parse successful response
+    let airtableData;
+    try {
+      airtableData = JSON.parse(responseText);
+      console.log('✅ Airtable update successful:', airtableData);
+    } catch {
+      console.warn('⚠️ Could not parse Airtable response as JSON, but update was successful');
+      airtableData = { message: 'Update successful but response not parseable as JSON' };
     }
+
+    console.log('🎉 Upload process completed successfully');
 
     return res.status(200).json({
       success: true,
       message: 'Documents uploaded and Airtable updated successfully',
+      airtableData,
+      attachments: Object.keys(attachments).reduce((acc, key) => {
+        acc[key] = attachments[key].url;
+        return acc;
+      }, {} as { [key: string]: string }),
     });
-  } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
-    // console.error('Upload API Error:', { error: errorMessage, recordId, timestamp: new Date().toISOString() });
-    return res.status(500).json({ success: false, error: errorMessage });
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+    console.error('💥 Upload API Error:', errorMessage);
+    console.error('💥 Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+    
+    return res.status(500).json({ 
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+    });
+    
   } finally {
-    await Promise.all(
-      filesToDelete.map(async (filePath) => {
-        try {
-          await fs.unlink(filePath);
-          console.log(`Deleted temporary file: ${filePath}`);
-        } catch (err) {
-          console.error(`Failed to delete temporary file ${filePath}:`, err);
-        }
-      })
-    );
+    // ✅ Cleanup temporary files
+    console.log('🧹 Cleaning up temporary files...');
+    if (filesToDelete.length > 0) {
+      const cleanupResults = await Promise.allSettled(
+        filesToDelete.map(async (filePath) => {
+          try {
+            await fs.unlink(filePath);
+            console.log(`🗑️ Deleted: ${filePath}`);
+          } catch (cleanupError) {
+            console.warn(`⚠️ Could not delete ${filePath}:`, cleanupError);
+          }
+        })
+      );
+      console.log(`🧹 Cleanup completed. ${cleanupResults.length} files processed.`);
+    }
   }
 }
