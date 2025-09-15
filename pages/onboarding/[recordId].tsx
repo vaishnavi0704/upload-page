@@ -223,7 +223,9 @@ export default function OnboardingDashboard({ candidateData, error }: Props) {
       <div className="onboarding-flow">
         <div className="flow-header">
           <div className="flow-title">Onboarding Process Flow</div>
-          <div className="flow-subtitle">Track the candidate's journey through the onboarding process</div>
+          <div className="flow-subtitle">
+            Track the candidate&apos;s journey through the onboarding process
+          </div>
         </div>
 
         <div className="steps">
