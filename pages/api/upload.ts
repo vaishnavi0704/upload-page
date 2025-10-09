@@ -93,10 +93,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     console.log(`Success! Updated Airtable field ${fieldId} for record ${recordId}`);
     return res.status(200).json({ success: true, url: blob.url });
 
-  } catch (error) {
-    const err = error as Error;
-    console.error('Upload Error:', err.message, err.stack);
-    return res.status(500).json({ error: err.message || 'Upload failed' });
+  } catch (error: unknown) {
+    console.error('Upload Error:', error instanceof Error ? error.message : 'Unknown error', error instanceof Error ? error.stack : undefined);
+    return res.status(500).json({ error: error instanceof Error ? error.message : 'Upload failed' });
   }
 }
 // import type { NextApiRequest, NextApiResponse } from 'next';
