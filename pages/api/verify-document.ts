@@ -1,32 +1,53 @@
-
-
 import type { NextApiRequest, NextApiResponse } from 'next';
 import OpenAI from 'openai';
 import pdf from 'pdf-parse';
-import { PDFDocument } from 'pdf-lib';
 
-// 🔥 NEW: Helper function to check if names match
+// Define types for verification result
+interface VerificationResult {
+  isValid: boolean;
+  confidence: number;
+  extractedData: {
+    name?: string;
+    idNumber?: string;
+    address?: string;
+    dateOfBirth?: string;
+    expiryDate?: string;
+    issueDate?: string;
+    companyName?: string;
+    position?: string;
+  };
+  issues: string[];
+  aiAnalysis: string;
+  nameMatch: boolean;
+  extractedName: string;
+}
+
+interface RequestBody {
+  fileData: string;
+  fileName: string;
+  fileType: string;
+  documentType: 'identity' | 'address' | 'offer';
+  candidateName: string;
+}
+
+// Helper function to check if names match
 function namesMatch(candidateName: string, extractedName: string): boolean {
   if (!candidateName || !extractedName) return false;
 
-  // Normalize both names: lowercase, remove extra spaces, special characters
   const normalize = (name: string) => 
     name.toLowerCase()
-      .replace(/[^a-z\s]/g, '') // Remove non-alphabetic characters
-      .replace(/\s+/g, ' ')      // Normalize spaces
+      .replace(/[^a-z\s]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
 
   const normalizedCandidate = normalize(candidateName);
   const normalizedExtracted = normalize(extractedName);
 
-  // Direct match
   if (normalizedCandidate === normalizedExtracted) return true;
 
-  // Split names into parts
   const candidateParts = normalizedCandidate.split(' ').filter(p => p.length > 0);
   const extractedParts = normalizedExtracted.split(' ').filter(p => p.length > 0);
 
-  // Check if all candidate name parts exist in extracted name
   const allPartsMatch = candidateParts.every(part => 
     extractedParts.some(extractedPart => 
       extractedPart.includes(part) || part.includes(extractedPart)
@@ -35,7 +56,6 @@ function namesMatch(candidateName: string, extractedName: string): boolean {
 
   if (allPartsMatch && candidateParts.length >= 2) return true;
 
-  // Check for partial match (at least first and last name)
   if (candidateParts.length >= 2 && extractedParts.length >= 2) {
     const firstNameMatch = candidateParts[0] === extractedParts[0] || 
                           candidateParts[0].includes(extractedParts[0]) ||
@@ -57,7 +77,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const { fileData, fileName, fileType, documentType, candidateName } = req.body; // 🔥 NEW: candidateName
+    const { fileData, fileName, fileType, documentType, candidateName } = req.body as RequestBody;
 
     if (!fileData || !documentType) {
       return res.status(400).json({ error: 'Missing fileData or documentType' });
@@ -90,8 +110,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const data = await pdf(buffer);
         extractedText = data.text.trim();
         console.log(`📝 PDF text extracted: ${extractedText.length} chars`);
-      } catch (err: any) {
-        console.log(`⚠️ Text extraction failed: ${err.message}`);
+      } catch (err) {
+        const error = err as Error;
+        console.log(`⚠️ Text extraction failed: ${error.message}`);
       }
 
       if (extractedText.length >= 100) {
@@ -155,9 +176,8 @@ Set confidence 0.85-0.95 for clear PDFs with complete information.`,
         }
 
         const cleaned = content.replace(/```json\n?|```\n?/g, '').trim();
-        const result = JSON.parse(cleaned);
+        const result = JSON.parse(cleaned) as VerificationResult;
 
-        // 🔥 NEW: Double-check name matching on backend
         if (result.extractedName) {
           const backendNameMatch = namesMatch(candidateName, result.extractedName);
           
@@ -179,7 +199,6 @@ Set confidence 0.85-0.95 for clear PDFs with complete information.`,
         return res.status(200).json(result);
       }
 
-      // Scanned PDF handling (same as before but with name check)
       console.log('📸 PDF appears to be scanned/image-based...');
       
       return res.status(200).json({
@@ -196,7 +215,6 @@ Set confidence 0.85-0.95 for clear PDFs with complete information.`,
       });
     }
 
-    // Handle image files (JPG, PNG, WebP)
     console.log('🖼️ Processing image file with Vision API');
 
     const prompts: Record<string, string> = {
@@ -275,9 +293,8 @@ Set isValid to TRUE only if: name matches "${candidateName}" AND shows company i
     }
 
     const cleaned = content.replace(/```json\n?|```\n?/g, '').trim();
-    const result = JSON.parse(cleaned);
+    const result = JSON.parse(cleaned) as VerificationResult;
 
-    // 🔥 NEW: Backend name verification as final check
     if (result.extractedName) {
       const backendNameMatch = namesMatch(candidateName, result.extractedName);
       
@@ -294,7 +311,6 @@ Set isValid to TRUE only if: name matches "${candidateName}" AND shows company i
         result.aiAnalysis = `NAME VERIFICATION FAILED: Document shows "${result.extractedName}" but you are registered as "${candidateName}". Please upload a document with YOUR name.`;
       }
     } else {
-      // No name extracted at all
       result.nameMatch = false;
       result.isValid = false;
       result.confidence = Math.min(result.confidence, 0.4);
@@ -307,14 +323,15 @@ Set isValid to TRUE only if: name matches "${candidateName}" AND shows company i
     console.log(`✅ Image verification: ${result.isValid ? 'VALID' : 'INVALID'} | Name Match: ${result.nameMatch} (confidence: ${result.confidence})`);
     return res.status(200).json(result);
 
-  } catch (error: any) {
-    console.error('❌ Verification error:', error.message);
+  } catch (error) {
+    const err = error as Error;
+    console.error('❌ Verification error:', err.message);
     return res.status(500).json({ 
-      error: error.message || 'Verification failed',
+      error: err.message || 'Verification failed',
       isValid: false,
       confidence: 0,
       issues: ['An error occurred during verification. Please try again.'],
-      aiAnalysis: `Error: ${error.message}`,
+      aiAnalysis: `Error: ${err.message}`,
       nameMatch: false,
       extractedName: ''
     });
