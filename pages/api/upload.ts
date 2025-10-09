@@ -1,21 +1,24 @@
-
-
-// pages/api/upload.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
-import formidable from 'formidable';
+import formidable, { Fields, Files } from 'formidable';
 import fs from 'fs';
 import { put } from '@vercel/blob';
 
 export const config = { api: { bodyParser: false } };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+interface ResponseData {
+  success?: boolean;
+  url?: string;
+  error?: string;
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<ResponseData>) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
     const form = formidable({ maxFileSize: 10 * 1024 * 1024 });
-    const [fields, files] = await new Promise<[formidable.Fields, formidable.Files]>(
+    const [fields, files] = await new Promise<[Fields, Files]>(
       (resolve, reject) => form.parse(req, (err, f, files) => (err ? reject(err) : resolve([f, files])))
     );
 
@@ -29,14 +32,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log(`Uploading ${documentType} to Blob for record ${recordId}`);
 
-    // Validate Airtable token
     const airtableToken = process.env.AIRTABLE_TOKEN;
     if (!airtableToken) {
       console.error('AIRTABLE_TOKEN is not set');
       return res.status(500).json({ error: 'Airtable not configured. Check AIRTABLE_TOKEN.' });
     }
 
-    // Upload to Vercel Blob (your previous fix should handle this)
     const fileBuffer = fs.readFileSync(file.filepath);
     const filename = `${recordId}_${documentType}_${Date.now()}_${file.originalFilename?.replace(/[^a-zA-Z0-9.-]/g, '_') || 'file'}`;
     const blob = await put(filename, fileBuffer, {
@@ -46,7 +47,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log('Blob URL:', blob.url);
 
-    // Detailed Airtable update with error logging
     const fieldIds: Record<string, string> = {
       identity: 'fldfBioSTVdXUeaNr',
       address: 'fldFx6Do3NigG9Inl',
@@ -74,7 +74,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     );
 
-    // Log full response for debugging
     const airtableResponseText = await airtableResponse.text();
     console.log(`Airtable Response Status: ${airtableResponse.status}`);
     console.log(`Airtable Response Body: ${airtableResponseText}`);
@@ -82,9 +81,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!airtableResponse.ok) {
       let errorMessage = `Airtable API error (${airtableResponse.status}): ${airtableResponseText}`;
       try {
-        const errorData = JSON.parse(airtableResponseText);
+        const errorData = JSON.parse(airtableResponseText) as { error?: string };
         errorMessage = errorData.error || errorMessage;
-      } catch {}
+      } catch {
+        // Keep default error message
+      }
       throw new Error(errorMessage);
     }
 
@@ -92,9 +93,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log(`Success! Updated Airtable field ${fieldId} for record ${recordId}`);
     return res.status(200).json({ success: true, url: blob.url });
 
-  } catch (error: any) {
-    console.error('Upload Error:', error.message, error.stack);
-    return res.status(500).json({ error: error.message || 'Upload failed' });
+  } catch (error) {
+    const err = error as Error;
+    console.error('Upload Error:', err.message, err.stack);
+    return res.status(500).json({ error: err.message || 'Upload failed' });
   }
 }
 // import type { NextApiRequest, NextApiResponse } from 'next';
