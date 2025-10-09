@@ -39,8 +39,4 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   }
-  "scripts": {
-    "build": "echo 'No build step needed for serverless'",
-    "start": "node server.js"
-  }
 }
