@@ -55,7 +55,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   // WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      wsRef.current = new WebSocket('https://backend-server-preboarding.onrender.com/upload/receNzqdLUuJwbKEX');
+      wsRef.current = new WebSocket('https://backend-server-preboarding.onrender.com/');
 
       wsRef.current.onopen = () => {
         console.log('✅ WebSocket connected');
