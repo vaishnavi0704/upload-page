@@ -897,7 +897,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   // WebSocket connection
   useEffect(() => {
     const connectWebSocket = () => {
-      wsRef.current = new WebSocket(process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000');
+      wsRef.current = new WebSocket(process.env.NEXT_PUBLIC_WS_URL);
 
       wsRef.current.onopen = () => {
         console.log('✅ WebSocket connected');
