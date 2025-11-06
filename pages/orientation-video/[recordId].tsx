@@ -49,6 +49,43 @@ interface Props {
   error?: string;
 }
 
+// Quiz questions related to the orientation video
+const QUIZ_QUESTIONS = [
+  {
+    id: 1,
+    question: "What are the core values mentioned in our company culture?",
+    options: [
+      "Innovation, Integrity, and Collaboration",
+      "Speed, Profit, and Growth",
+      "Competition, Success, and Excellence",
+      "Technology, Marketing, and Sales"
+    ],
+    correctAnswer: 0
+  },
+  {
+    id: 2,
+    question: "What is the expected dress code for office days?",
+    options: [
+      "Formal business attire",
+      "Business casual",
+      "Casual comfortable clothing",
+      "Uniform provided by company"
+    ],
+    correctAnswer: 1
+  },
+  {
+    id: 3,
+    question: "How many days of paid time off (PTO) do new employees receive annually?",
+    options: [
+      "10 days",
+      "15 days",
+      "20 days",
+      "25 days"
+    ],
+    correctAnswer: 2
+  }
+];
+
 export default function OrientationVideo({ candidateName, recordId, error }: Props) {
   const [videoWatched, setVideoWatched] = useState(false);
   const [player, setPlayer] = useState<YouTubePlayer | null>(null);
@@ -56,10 +93,16 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
   const [watchProgress, setWatchProgress] = useState(0);
   const [videoStarted, setVideoStarted] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  
+  // Quiz state
+  const [quizAnswers, setQuizAnswers] = useState<{ [key: number]: number }>({});
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [quizCompleted, setQuizCompleted] = useState(false);
+  
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const startProgressTracking = useCallback((playerInstance: YouTubePlayer) => {
-    stopProgressTracking(); // Clear any existing interval
+    stopProgressTracking();
 
     progressIntervalRef.current = setInterval(() => {
       try {
@@ -73,17 +116,16 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
         console.error('Error tracking progress:', error);
       }
     }, 1000);
-  }, []); // Empty dependency array since startProgressTracking doesn't depend on props/state
+  }, []);
 
   const stopProgressTracking = useCallback(() => {
     if (progressIntervalRef.current) {
       clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
     }
-  }, []); // Empty dependency array for stability
+  }, []);
 
   useEffect(() => {
-    // Load YouTube API
     const tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     const firstScriptTag = document.getElementsByTagName('script')[0];
@@ -105,10 +147,8 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
         events: {
           onReady: (event: { target: YouTubePlayer }) => {
             event.target.setPlaybackRate(1);
-            console.log('YouTube player ready');
           },
           onStateChange: (event: { data: number; target: YouTubePlayer }) => {
-            console.log('Player state changed:', event.data);
             if (event.data === window.YT.PlayerState.PLAYING) {
               setVideoStarted(true);
               startProgressTracking(event.target);
@@ -119,6 +159,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
             if (event.data === window.YT.PlayerState.ENDED) {
               setVideoWatched(true);
               setWatchProgress(100);
+              setShowQuiz(true);
             }
           },
         },
@@ -132,13 +173,31 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
         player.destroy();
       }
     };
-  }, [player, startProgressTracking, stopProgressTracking]); // Include stable dependencies
+  }, [player, startProgressTracking, stopProgressTracking]);
+
+  const handleQuizAnswerChange = (questionId: number, answerIndex: number) => {
+    setQuizAnswers(prev => ({
+      ...prev,
+      [questionId]: answerIndex
+    }));
+  };
+
+  const handleQuizSubmit = () => {
+    // Check if all questions are answered
+    const allAnswered = QUIZ_QUESTIONS.every(q => quizAnswers[q.id] !== undefined);
+    
+    if (!allAnswered) {
+      alert('Please answer all questions before proceeding.');
+      return;
+    }
+
+    setQuizCompleted(true);
+  };
 
   const handleSubmit = async () => {
-    if (!videoWatched || isSubmitting) return;
+    if (!videoWatched || !quizCompleted || isSubmitting) return;
 
     setIsSubmitting(true);
-    console.log('Starting video confirmation submission for recordId:', recordId);
 
     try {
       const response = await fetch('/api/submit-video-confirmation', {
@@ -146,43 +205,29 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ recordId }),
+        body: JSON.stringify({ 
+          recordId,
+          quizAnswers: quizAnswers
+        }),
       });
 
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-
-      const responseText = await response.text();
-      console.log('Response text:', responseText);
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('Failed to parse response as JSON:', parseError);
-        throw new Error(`Server returned invalid response: ${responseText}`);
-      }
+      const data = await response.json();
 
       if (!response.ok) {
-        console.error('API Error:', data);
-        throw new Error(data.error || `HTTP ${response.status}: ${data.details || 'Unknown error'}`);
+        throw new Error(data.error || 'Failed to submit confirmation');
       }
 
       setSubmitSuccess(true);
-      console.log('Submission successful:', data);
-
-      // Show success message
+      
       setTimeout(() => {
-        alert('Video confirmation submitted successfully! Your onboarding will continue to the next step.');
+        alert('Orientation completed successfully! You will be redirected to the next step.');
       }, 500);
     } catch (error) {
-      console.error('Submission error details:', error);
-
+      console.error('Submission error:', error);
+      
       let errorMessage = 'Please try again.';
       if (error instanceof Error) {
         errorMessage = error.message;
-      } else if (typeof error === 'string') {
-        errorMessage = error;
       }
 
       alert(`Failed to submit confirmation: ${errorMessage}`);
@@ -329,24 +374,13 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
               color: '#6b7280',
               fontSize: '16px',
               lineHeight: '1.6',
-              marginBottom: '20px'
+              marginBottom: '0'
             }}>
               {submitSuccess
                 ? 'Thank you for completing the orientation video. Your onboarding process will continue shortly.'
                 : 'Please watch our orientation video to learn about our company culture, values, and what to expect in your new role.'
               }
             </p>
-            <div style={{
-              display: 'inline-block',
-              background: 'linear-gradient(135deg, #667eea, #764ba2)',
-              color: 'white',
-              padding: '8px 16px',
-              borderRadius: '20px',
-              fontSize: '12px',
-              fontWeight: '500'
-            }}>
-              Record ID: {recordId}
-            </div>
           </div>
 
           {/* Video Section */}
@@ -414,7 +448,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
             </div>
 
             {/* Progress Bar */}
-            {videoStarted && (
+            {videoStarted && !videoWatched && (
               <div style={{ marginTop: '24px' }}>
                 <div style={{
                   display: 'flex',
@@ -432,7 +466,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                   <span style={{
                     fontSize: '14px',
                     fontWeight: '600',
-                    color: videoWatched ? '#059669' : '#667eea'
+                    color: '#667eea'
                   }}>
                     {Math.round(watchProgress)}%
                   </span>
@@ -444,9 +478,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                   overflow: 'hidden'
                 }}>
                   <div style={{
-                    background: videoWatched
-                      ? 'linear-gradient(135deg, #10b981, #059669)'
-                      : 'linear-gradient(135deg, #667eea, #764ba2)',
+                    background: 'linear-gradient(135deg, #667eea, #764ba2)',
                     height: '100%',
                     borderRadius: '8px',
                     width: `${watchProgress}%`,
@@ -458,42 +490,178 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
           </div>
 
           {/* Instructions Card */}
-          <div style={{
-            background: 'rgba(59, 130, 246, 0.1)',
-            border: '1px solid rgba(59, 130, 246, 0.3)',
-            borderRadius: '12px',
-            padding: '20px',
-            marginBottom: '32px'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <div style={{ fontSize: '20px', marginTop: '2px' }}>💡</div>
-              <div>
-                <h4 style={{
-                  color: '#1e40af',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  marginBottom: '8px'
-                }}>
-                  Important Instructions
-                </h4>
-                <ul style={{
-                  color: '#1e40af',
-                  fontSize: '13px',
-                  lineHeight: '1.5',
-                  margin: 0,
-                  paddingLeft: '16px'
-                }}>
-                  <li>Please watch the entire video from start to finish</li>
-                  <li>The video cannot be skipped or fast-forwarded</li>
-                  <li>You must complete the full video to proceed</li>
-                  <li>Click &quot;Complete Orientation&quot; once the video has finished</li>
-                </ul>
+          {!videoWatched && (
+            <div style={{
+              background: 'rgba(59, 130, 246, 0.1)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: '12px',
+              padding: '20px',
+              marginBottom: '32px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <div style={{ fontSize: '20px', marginTop: '2px' }}>💡</div>
+                <div>
+                  <h4 style={{
+                    color: '#1e40af',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    marginBottom: '8px'
+                  }}>
+                    Important Instructions
+                  </h4>
+                  <ul style={{
+                    color: '#1e40af',
+                    fontSize: '13px',
+                    lineHeight: '1.5',
+                    margin: 0,
+                    paddingLeft: '16px'
+                  }}>
+                    <li>Watch the complete orientation video from start to finish</li>
+                    <li>After the video ends, answer 3 questions about the content</li>
+                    <li>Once you complete the quiz, you can submit your orientation</li>
+                  </ul>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Quiz Section */}
+          {showQuiz && !submitSuccess && (
+            <div style={{
+              background: 'white',
+              borderRadius: '16px',
+              padding: '32px',
+              marginBottom: '32px',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                marginBottom: '24px'
+              }}>
+                <div style={{
+                  width: '40px',
+                  height: '40px',
+                  background: quizCompleted
+                    ? 'linear-gradient(135deg, #10b981, #059669)'
+                    : 'linear-gradient(135deg, #f59e0b, #d97706)',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '18px'
+                }}>
+                  {quizCompleted ? '✅' : '📝'}
+                </div>
+                <div>
+                  <h3 style={{
+                    color: '#1f2937',
+                    fontSize: '20px',
+                    fontWeight: '600',
+                    margin: 0,
+                    marginBottom: '4px'
+                  }}>
+                    Orientation Quiz
+                  </h3>
+                  <p style={{
+                    color: '#6b7280',
+                    fontSize: '14px',
+                    margin: 0
+                  }}>
+                    {quizCompleted ? 'Quiz completed! ✅' : 'Answer the following questions based on the video'}
+                  </p>
+                </div>
+              </div>
+
+              {QUIZ_QUESTIONS.map((question, index) => (
+                <div key={question.id} style={{
+                  marginBottom: '24px',
+                  paddingBottom: '24px',
+                  borderBottom: index < QUIZ_QUESTIONS.length - 1 ? '1px solid #e5e7eb' : 'none'
+                }}>
+                  <p style={{
+                    color: '#1f2937',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    marginBottom: '12px'
+                  }}>
+                    {index + 1}. {question.question}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {question.options.map((option, optionIndex) => (
+                      <label
+                        key={optionIndex}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          padding: '12px',
+                          background: quizAnswers[question.id] === optionIndex
+                            ? 'rgba(102, 126, 234, 0.1)'
+                            : '#f9fafb',
+                          border: quizAnswers[question.id] === optionIndex
+                            ? '2px solid #667eea'
+                            : '2px solid #e5e7eb',
+                          borderRadius: '8px',
+                          cursor: quizCompleted ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.2s ease',
+                          opacity: quizCompleted ? 0.6 : 1
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name={`question-${question.id}`}
+                          value={optionIndex}
+                          checked={quizAnswers[question.id] === optionIndex}
+                          onChange={() => !quizCompleted && handleQuizAnswerChange(question.id, optionIndex)}
+                          disabled={quizCompleted}
+                          style={{ marginRight: '12px', cursor: quizCompleted ? 'not-allowed' : 'pointer' }}
+                        />
+                        <span style={{
+                          color: '#374151',
+                          fontSize: '14px'
+                        }}>
+                          {option}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {!quizCompleted && (
+                <button
+                  onClick={handleQuizSubmit}
+                  style={{
+                    width: '100%',
+                    background: 'linear-gradient(135deg, #667eea, #764ba2)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    padding: '14px 24px',
+                    fontSize: '15px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)',
+                    transition: 'all 0.3s ease'
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(102, 126, 234, 0.5)';
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(102, 126, 234, 0.4)';
+                  }}
+                >
+                  Submit Quiz Answers
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Submit Section */}
-          {!submitSuccess && (
+          {videoWatched && quizCompleted && !submitSuccess && (
             <div style={{
               background: 'white',
               borderRadius: '16px',
@@ -501,118 +669,30 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
               boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
               textAlign: 'center'
             }}>
-              {videoWatched ? (
-                <div style={{
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '24px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '20px' }}>🎉</div>
-                    <span style={{
-                      color: '#065f46',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}>
-                      Congratulations! You&apos;ve completed the orientation video.
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  background: 'rgba(251, 191, 36, 0.1)',
-                  border: '1px solid rgba(251, 191, 36, 0.3)',
-                  borderRadius: '12px',
-                  padding: '16px',
-                  marginBottom: '24px'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                    <div style={{ fontSize: '20px' }}>⏳</div>
-                    <span style={{
-                      color: '#92400e',
-                      fontSize: '14px',
-                      fontWeight: '500'
-                    }}>
-                      Please watch the complete video before proceeding.
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Debug Info */}
               <div style={{
-                background: '#f3f4f6',
-                border: '1px solid #d1d5db',
-                borderRadius: '8px',
-                padding: '12px',
-                marginBottom: '16px',
-                fontSize: '12px',
-                color: '#374151'
+                background: 'rgba(16, 185, 129, 0.1)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                borderRadius: '12px',
+                padding: '16px',
+                marginBottom: '24px'
               }}>
-                <strong>Debug Info:</strong><br />
-                Record ID: {recordId}<br />
-                Video Watched: {videoWatched ? 'Yes' : 'No'}<br />
-                Video Started: {videoStarted ? 'Yes' : 'No'}<br />
-                Progress: {watchProgress.toFixed(1)}%
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', marginBottom: '24px' }}>
-                {/* Test API Button */}
-                <button
-                  onClick={async () => {
-                    try {
-                      const response = await fetch('/api/submit-video-confirmation', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ recordId }),
-                      });
-                      const data = await response.text();
-                      alert(`API Test Result:\nStatus: ${response.status}\nResponse: ${data}`);
-                    } catch (error) {
-                      alert(`API Test Error: ${error}`);
-                    }
-                  }}
-                  style={{
-                    background: '#6b7280',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    fontSize: '12px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  🧪 Test API
-                </button>
-
-                {/* Force Complete Button (for testing) */}
-                <button
-                  onClick={() => {
-                    setVideoWatched(true);
-                    setWatchProgress(100);
-                    alert('Video marked as watched for testing');
-                  }}
-                  style={{
-                    background: '#f59e0b',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '8px',
-                    padding: '8px 16px',
-                    fontSize: '12px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  🎯 Force Complete
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                  <div style={{ fontSize: '20px' }}>🎉</div>
+                  <span style={{
+                    color: '#065f46',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}>
+                    Great job! You&apos;ve completed the video and quiz.
+                  </span>
+                </div>
               </div>
 
               <button
                 onClick={handleSubmit}
-                disabled={!videoWatched || isSubmitting}
+                disabled={isSubmitting}
                 style={{
-                  background: (!videoWatched || isSubmitting)
+                  background: isSubmitting
                     ? '#9ca3af'
                     : 'linear-gradient(135deg, #10b981, #059669)',
                   color: 'white',
@@ -621,23 +701,22 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                   padding: '16px 32px',
                   fontSize: '16px',
                   fontWeight: '600',
-                  cursor: (!videoWatched || isSubmitting) ? 'not-allowed' : 'pointer',
-                  boxShadow: (!videoWatched || isSubmitting)
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                  boxShadow: isSubmitting
                     ? 'none'
                     : '0 4px 12px rgba(16, 185, 129, 0.4)',
                   transition: 'all 0.3s ease',
-                  transform: (!videoWatched || isSubmitting) ? 'none' : 'translateY(0)',
                   minWidth: '200px',
-                  opacity: (!videoWatched || isSubmitting) ? 0.6 : 1
+                  opacity: isSubmitting ? 0.6 : 1
                 }}
                 onMouseOver={(e) => {
-                  if (videoWatched && !isSubmitting) {
+                  if (!isSubmitting) {
                     e.currentTarget.style.transform = 'translateY(-2px)';
                     e.currentTarget.style.boxShadow = '0 6px 16px rgba(16, 185, 129, 0.5)';
                   }
                 }}
                 onMouseOut={(e) => {
-                  if (videoWatched && !isSubmitting) {
+                  if (!isSubmitting) {
                     e.currentTarget.style.transform = 'translateY(0)';
                     e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.4)';
                   }
@@ -655,10 +734,8 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                     }}></div>
                     Submitting...
                   </div>
-                ) : videoWatched ? (
-                  <>✅ Complete Orientation</>
                 ) : (
-                  <>⏳ Watch Video First</>
+                  <>✅ Complete Orientation</>
                 )}
               </button>
 
@@ -668,10 +745,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                 marginTop: '16px',
                 lineHeight: '1.4'
               }}>
-                {videoWatched
-                  ? 'Click the button above to confirm you&apos;ve completed the orientation video.'
-                  : 'The button will become available once you finish watching the video.'
-                }
+                Click the button above to confirm you&apos;ve completed the orientation.
               </p>
             </div>
           )}
@@ -729,10 +803,10 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
       <div style={{
         textAlign: 'center',
         padding: '20px',
-        color: 'rgba(255,255,255,0.7)',
-        fontSize: '12px'
+        color: 'rgba(255,255,255,0.8)',
+        fontSize: '13px'
       }}>
-        Need help? Contact our support team for assistance.
+        Need help? Contact our HR team at support@company.com
       </div>
 
       <style jsx>{`
@@ -749,7 +823,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
   const { recordId } = context.params as { recordId: string };
 
   if (!recordId.match(/^[a-zA-Z0-9]+$/)) {
-    return { props: { error: 'Invalid Record ID format' } };
+    return { props: { candidateName: '', recordId: '', error: 'Invalid Record ID format' } };
   }
 
   try {
@@ -763,8 +837,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Airtable fetch failed: ${errorText || 'Record not found'}`);
+      throw new Error('Record not found');
     }
 
     const data = await response.json();
@@ -773,6 +846,12 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     return { props: { candidateName, recordId } };
   } catch (err) {
     console.error('getServerSideProps Error:', err);
-    return { props: { error: 'Failed to load candidate details. Please check your Record ID.' } };
+    return { 
+      props: { 
+        candidateName: '', 
+        recordId: '', 
+        error: 'Failed to load candidate details. Please check your Record ID.' 
+      } 
+    };
   }
 };
