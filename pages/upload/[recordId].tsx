@@ -782,9 +782,6 @@
 
 
 
-
-
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -1203,6 +1200,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     if (audioContextRef.current) {
       try {
         await audioContextRef.current.suspend();
+        console.log('⏸️ Audio context suspended');
       } catch (err) {
         console.log('Could not suspend audio context:', err);
       }
@@ -1230,17 +1228,26 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       if (!verifyResponse.ok) throw new Error('Verification failed');
       const verificationResult = await verifyResponse.json();
 
+      // CRITICAL FIX: Resume audio context BEFORE re-enabling conversation and sending results
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         try {
           await audioContextRef.current.resume();
+          console.log('▶️ Audio context resumed successfully');
         } catch (err) {
           console.log('Could not resume audio context:', err);
         }
       }
 
+      // Small delay to ensure audio pipeline is fully ready
+      await new Promise(resolve => setTimeout(resolve, 200));
+
       console.log('🔓 Re-enabling conversation after verification');
       setConversationEnabled(true);
 
+      // Wait a bit more before sending to ensure frontend is ready to receive audio
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // NOW send verification result - audio system is ready to receive response
       wsRef.current?.send(JSON.stringify({
         type: 'verification_result',
         documentType: currentStep,
@@ -1327,14 +1334,17 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     } catch (err) {
       addAgentMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       
+      // Ensure audio is resumed even on error
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         try {
           await audioContextRef.current.resume();
+          console.log('▶️ Audio context resumed after error');
         } catch (resumeErr) {
           console.log('Could not resume audio context:', resumeErr);
         }
       }
       
+      await new Promise(resolve => setTimeout(resolve, 200));
       setConversationEnabled(true);
       
       wsRef.current?.send(JSON.stringify({
