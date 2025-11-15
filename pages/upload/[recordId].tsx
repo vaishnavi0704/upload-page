@@ -774,16 +774,6 @@
 // };
 
 
-
-
-
-
-
-
-
-
-
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -868,11 +858,11 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const audioQueueRef = useRef<AudioBuffer[]>([]); // Kept for compatibility, but deprecated
+  const audioQueueRef = useRef<AudioBuffer[]>([]); // Deprecated, but kept to avoid breaking old refs
   const isPlayingRef = useRef<boolean>(false);
   const animationFrameRef = useRef<number | null>(null);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
-
+  
   // NEW: Accumulate ALL audio chunks before playing
   const allAudioChunksRef = useRef<Float32Array[]>([]);
   const isReceivingAudioRef = useRef<boolean>(false);
@@ -930,19 +920,11 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           isReceivingAudioRef.current = true;
           setAgentIsSpeaking(true);
           
-          // Clear the completion timeout
-          if (audioCompleteTimeoutRef.current) {
-            clearTimeout(audioCompleteTimeoutRef.current);
-          }
+          // **FIX: REMOVED 300ms TIMEOUT**
+          // We will *only* play audio on 'audio_complete'
           
           // Store the chunk
           storeAudioChunk(data.delta);
-          
-          // Set timeout to detect when streaming is complete (300ms of no new data)
-          audioCompleteTimeoutRef.current = setTimeout(() => {
-            console.log('🎵 Audio streaming complete - playing accumulated audio');
-            playAccumulatedAudio();
-          }, 300);
           
         } else if (data.type === 'audio_complete') {
           // Server explicitly says audio is complete
@@ -952,7 +934,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           
           console.log('🎵 Received audio_complete - playing all accumulated audio');
           isReceivingAudioRef.current = false;
-          playAccumulatedAudio();
+          playAccumulatedAudio(); // This is now the ONLY place audio is played
         } else if (data.type === 'user_transcript') {
           addUserMessage(data.content);
         } else if (data.type === 'user_started_speaking') {
@@ -1735,7 +1717,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
   try {
     const response = await fetch(
-      `https://api.airtable.com/v0/appMvECrw7CrJFCO0/tblqaH9RrTO6JuG5N/${recordId}`,
+      `https.api.airtable.com/v0/appMvECrw7CrJFCO0/tblqaH9RrTO6JuG5N/${recordId}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
@@ -1762,3 +1744,11 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     };
   }
 };
+
+
+
+
+
+
+
+
