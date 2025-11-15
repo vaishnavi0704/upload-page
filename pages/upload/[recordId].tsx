@@ -779,8 +779,6 @@
 
 
 
-
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -1198,6 +1196,46 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     setMessages((prev) => [...prev, newMessage]);
   };  
 
+  // Helper function to resume audio and notify backend after verification
+  const resumeAudioAndNotify = async (verificationResult: any) => {
+    // Resume audio context BEFORE re-enabling conversation and sending results
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      try {
+        await audioContextRef.current.resume();
+        console.log('▶️ Audio context resumed successfully');
+      } catch (err) {
+        console.log('Could not resume audio context:', err);
+      }
+    }
+
+    // Delay to ensure audio pipeline is fully ready (300ms total)
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    console.log('🔓 Re-enabling conversation after verification');
+    setConversationEnabled(true);
+
+    // Additional delay before sending to ensure frontend is ready to receive audio
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    // NOW send verification result - audio system is ready to receive response
+    console.log('📤 Sending verification result to backend');
+    wsRef.current?.send(JSON.stringify({
+      type: 'verification_result',
+      documentType: currentStep,
+      fileName: fileInputRef.current?.files?.[0]?.name || '',
+      recordId,
+      verificationData: {
+        confidence: verificationResult.confidence,
+        extractedData: verificationResult.extractedData || {},
+        aiAnalysis: verificationResult.aiAnalysis,
+        isValid: verificationResult.isValid,
+        issues: verificationResult.issues || [],
+        nameMatch: verificationResult.nameMatch || false,
+        extractedName: verificationResult.extractedName || '',
+      }
+    }));
+  };
+
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || isVerifying || currentStep === 'complete') return;
@@ -1251,42 +1289,9 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       if (!verifyResponse.ok) throw new Error('Verification failed');
       const verificationResult = await verifyResponse.json();
 
-      // CRITICAL FIX: Resume audio context BEFORE re-enabling conversation and sending results
-      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-        try {
-          await audioContextRef.current.resume();
-          console.log('▶️ Audio context resumed successfully');
-        } catch (err) {
-          console.log('Could not resume audio context:', err);
-        }
-      }
+      console.log('✅ Document verification analysis complete');
 
-      // Small delay to ensure audio pipeline is fully ready
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      console.log('🔓 Re-enabling conversation after verification');
-      setConversationEnabled(true);
-
-      // Wait a bit more before sending to ensure frontend is ready to receive audio
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // NOW send verification result - audio system is ready to receive response
-      wsRef.current?.send(JSON.stringify({
-        type: 'verification_result',
-        documentType: currentStep,
-        fileName: file.name,
-        recordId,
-        verificationData: {
-          confidence: verificationResult.confidence,
-          extractedData: verificationResult.extractedData || {},
-          aiAnalysis: verificationResult.aiAnalysis,
-          isValid: verificationResult.isValid,
-          issues: verificationResult.issues || [],
-          nameMatch: verificationResult.nameMatch || false,
-          extractedName: verificationResult.extractedName || '',
-        }
-      }));
-
+      // CRITICAL: Check result and handle early returns BEFORE resuming audio
       if (verificationResult.nameMatch === false) {
         let nameMismatchMessage = `NAME VERIFICATION FAILED\n\n`;
         nameMismatchMessage += `**Expected Name:** ${candidateName}\n`;
@@ -1303,6 +1308,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         nameMismatchMessage += '\n**Please upload a document with YOUR name on it.**';
         addAgentMessage(nameMismatchMessage);
         
+        // Resume audio and notify backend AFTER displaying message
+        await resumeAudioAndNotify(verificationResult);
         return;
       }
 
@@ -1320,9 +1327,12 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         failureMessage += '\n**The voice agent will explain what needs to be corrected.**';
         addAgentMessage(failureMessage);
         
+        // Resume audio and notify backend AFTER displaying message
+        await resumeAudioAndNotify(verificationResult);
         return;
       }
 
+      // Success path - upload to Airtable
       const formData = new FormData();
       formData.append('file', file);
       formData.append('documentType', currentStep);
@@ -1353,6 +1363,9 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
 
       successMessage += '\n**The voice agent will guide you to the next step.**';
       addAgentMessage(successMessage);
+
+      // Resume audio and notify backend AFTER displaying message
+      await resumeAudioAndNotify(verificationResult);
 
     } catch (err) {
       addAgentMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
