@@ -825,7 +825,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   const voiceActivityBufferRef = useRef<number[]>([]);
   const isSpeakingContinuouslyRef = useRef<boolean>(false);
   const speechStartTimeRef = useRef<number>(0);
-  const MIN_SPEECH_DURATION_MS = 1500; // Only interrupt after 1.5 seconds of continuous speech
+  const MIN_SPEECH_DURATION_MS = 3000; // Only interrupt after 1.5 seconds of continuous speech
 
   
   useEffect(() => {
@@ -1350,7 +1350,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         throw new Error('Failed to upload to Airtable');
       }
 
-      let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
+      let successMessage = `✅ ${getDocumentLabel(currentStep)} hmmmmmmmmmmmmmm verified successfully!\n\n`;
       successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`;
       successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
       
@@ -1462,7 +1462,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 boxShadow: !conversationEnabled ? 'none' : (agentIsSpeaking ? '0 0 20px rgba(239, 68, 68, 0.8)' : (isSpeaking ? '0 0 20px rgba(16, 185, 129, 0.8)' : '0 0 10px rgba(107, 114, 128, 0.5)')),
                 animation: (isSpeaking || agentIsSpeaking) ? 'pulse 1.5s infinite' : 'none'
               }}>
-                {!conversationEnabled ? '⏸️' : (agentIsSpeaking ? '🤖' : (isSpeaking ? '🎤' : '👤'))}
+                {!conversationEnabled ? '' : (agentIsSpeaking ? '' : (isSpeaking ? '🎤' : '👤'))}
               </div>
               <div style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9 }}>
                 {!conversationEnabled ? 'PAUSED' : (agentIsSpeaking ? 'AGENT SPEAKING' : (isSpeaking ? 'YOU SPEAKING' : 'READY'))}
