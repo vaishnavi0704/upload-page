@@ -781,7 +781,6 @@
 
 
 
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -1027,6 +1026,9 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     const bufferLength = analyserRef.current.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     let lastSpeakingState = false;
+    let speakingFrameCount = 0;
+    const FRAMES_THRESHOLD = 15; // Require ~1 second of sustained speech (at 60fps)
+    let hasInterruptedAgent = false;
 
     const checkAudioLevel = () => {
       if (!analyserRef.current) return;
@@ -1039,24 +1041,45 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       setAudioLevel(average);
       
       const voiceThreshold = 20;
-      const currentlySpeaking = average > voiceThreshold && conversationEnabled && !agentIsSpeaking;
+      const isVoiceDetected = average > voiceThreshold && conversationEnabled;
       
-      if (currentlySpeaking && !lastSpeakingState) {
-        console.log('🎤 User started speaking');
-        setIsSpeaking(true);
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'user_speech_start'
-          }));
+      if (isVoiceDetected) {
+        speakingFrameCount++;
+        
+        // Only mark as speaking after threshold is met
+        if (speakingFrameCount >= FRAMES_THRESHOLD) {
+          if (!lastSpeakingState) {
+            console.log('🎤 User started speaking (sustained speech detected)');
+            setIsSpeaking(true);
+            lastSpeakingState = true;
+            
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: 'user_speech_start'
+              }));
+            }
+            
+            // Only interrupt agent if they're currently speaking
+            if (agentIsSpeaking && !hasInterruptedAgent) {
+              console.log('🛑 Interrupting agent due to sustained user speech');
+              stopAgentAudio();
+              hasInterruptedAgent = true;
+            }
+          }
         }
-        stopAgentAudio();
-      } else if (!currentlySpeaking && lastSpeakingState) {
-        console.log('🔇 User stopped speaking');
-        setIsSpeaking(false);
+      } else {
+        // Voice stopped
+        if (speakingFrameCount > 0) {
+          speakingFrameCount = Math.max(0, speakingFrameCount - 2); // Gradual decay
+        }
+        
+        if (lastSpeakingState && speakingFrameCount < 5) {
+          console.log('🔇 User stopped speaking');
+          setIsSpeaking(false);
+          lastSpeakingState = false;
+          hasInterruptedAgent = false;
+        }
       }
-      
-      lastSpeakingState = currentlySpeaking;
-      setIsSpeaking(currentlySpeaking);
 
       animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
     };
