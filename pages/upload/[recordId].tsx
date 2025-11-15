@@ -775,55 +775,8 @@
 
 
 
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
-
-// --- SVG Icons ---
-
-const IconUser = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A1.5 1.5 0 0118 21.75H6a1.5 1.5 0 01-1.499-1.632z" />
-  </svg>
-);
-
-const IconMic = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15a3 3 0 01-3-3V4.5a3 3 0 016 0v7.5a3 3 0 01-3 3z" />
-  </svg>
-);
-
-const IconAgent = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.375.375H6.75A2.25 2.25 0 014.5 16.5V6.75A2.25 2.25 0 016.75 4.5h10.5A2.25 2.25 0 0119.5 6.75v9.75c0 .993-.806 1.798-1.798 1.798H14.25a3 3 0 01-.375-.375v-1.007M9 17.25h6M6 13.5h3.75M6 10.5h3.75M6 7.5h3.75M13.5 13.5h3.75M13.5 10.5h3.75M13.5 7.5h3.75" />
-  </svg>
-);
-
-const IconPause = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
-  </svg>
-);
-
-const IconFile = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16" strokeWidth={2} style={{ marginRight: '8px', verticalAlign: 'middle' }}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 01-2.122-2.122l7.81-7.81c.19-.19.44-.29.7-.29a.996.996 0 01.7.29l2.122 2.122c.19.19.29.44.29.7s-.1.51-.29.7z" />
-  </svg>
-);
-
-const IconCheck = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="80" height="80" strokeWidth={3} style={{ color: '#10b981', marginBottom: '20px' }}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-  </svg>
-);
-
-const IconWarning = () => (
-  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="60" height="60" strokeWidth={1.5} style={{ color: '#ef4444', marginBottom: '20px' }}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
-  </svg>
-);
-
-// --- Component ---
 
 interface Message {
   id: string;
@@ -860,7 +813,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const audioQueueRef = useRef<AudioBuffer[]>([]); // Deprecated, but kept to avoid breaking old refs
+  const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef<boolean>(false);
   const animationFrameRef = useRef<number | null>(null);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -879,11 +832,11 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   
   useEffect(() => {
     if (error) {
-      addAgentMessage(`Error: ${error}`);
+      addAgentMessage(`❌ Error: ${error}`);
       return;
     }
     addAgentMessage(
-      `Hello, ${candidateName}! I'm your AI onboarding assistant. Let's verify your documents.\n\nPlease upload your **Identity Proof** in Image format (PNG, JPG) (Driver's License, Passport, or Government ID).`
+      `👋 Hello, ${candidateName}! I'm your AI onboarding assistant. Let's verify your documents.\n\nPlease upload your **Identity Proof** in Image format (PNG, JPG) (Driver's License, Passport, or Government ID).`
     );
   }, [candidateName, error]);
 
@@ -922,11 +875,19 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           isReceivingAudioRef.current = true;
           setAgentIsSpeaking(true);
           
-          // **FIX: REMOVED 300ms TIMEOUT**
-          // We will *only* play audio on 'audio_complete'
+          // Clear the completion timeout
+          if (audioCompleteTimeoutRef.current) {
+            clearTimeout(audioCompleteTimeoutRef.current);
+          }
           
           // Store the chunk
           storeAudioChunk(data.delta);
+          
+          // Set timeout to detect when streaming is complete (300ms of no new data)
+          audioCompleteTimeoutRef.current = setTimeout(() => {
+            console.log('🎵 Audio streaming complete - playing accumulated audio');
+            playAccumulatedAudio();
+          }, 300);
           
         } else if (data.type === 'audio_complete') {
           // Server explicitly says audio is complete
@@ -936,7 +897,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           
           console.log('🎵 Received audio_complete - playing all accumulated audio');
           isReceivingAudioRef.current = false;
-          playAccumulatedAudio(); // This is now the ONLY place audio is played
+          playAccumulatedAudio();
         } else if (data.type === 'user_transcript') {
           addUserMessage(data.content);
         } else if (data.type === 'user_started_speaking') {
@@ -1218,8 +1179,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     console.log('🛑 Stopping agent audio');
     
     // Clear all audio-related state
-    audioQueueRef.current = []; // Deprecated queue
-    allAudioChunksRef.current = []; // NEW accumulator
+    audioQueueRef.current = [];
+    allAudioChunksRef.current = [];
     isPlayingRef.current = false;
     isReceivingAudioRef.current = false;
     
@@ -1245,13 +1206,10 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   };
 
   const addAgentMessage = (content: string) => {
-    // Remove emojis from agent messages
-    const cleanContent = content.replace(/[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD00-\uDDFF]|\u200D|\u2640|\u2642|\u2600-\u2B55|\u2300-\u23FF/g, '').trim();
-    
     const newMessage: Message = {
       id: `${Date.now()}-${messageCounterRef.current++}`,
       type: 'agent',
-      content: cleanContent,
+      content,
       timestamp: new Date(),
     };
     setMessages((prev) => [...prev, newMessage]);
@@ -1290,7 +1248,6 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     if (audioContextRef.current) {
       try {
         await audioContextRef.current.suspend();
-        console.log('⏸️ Audio context suspended');
       } catch (err) {
         console.log('Could not suspend audio context:', err);
       }
@@ -1318,26 +1275,17 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       if (!verifyResponse.ok) throw new Error('Verification failed');
       const verificationResult = await verifyResponse.json();
 
-      // CRITICAL FIX: Resume audio context BEFORE re-enabling conversation and sending results
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         try {
           await audioContextRef.current.resume();
-          console.log('▶️ Audio context resumed successfully');
         } catch (err) {
           console.log('Could not resume audio context:', err);
         }
       }
 
-      // Small delay to ensure audio pipeline is fully ready
-      await new Promise(resolve => setTimeout(resolve, 200));
-
       console.log('🔓 Re-enabling conversation after verification');
       setConversationEnabled(true);
 
-      // Wait a bit more before sending to ensure frontend is ready to receive audio
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // NOW send verification result - audio system is ready to receive response
       wsRef.current?.send(JSON.stringify({
         type: 'verification_result',
         documentType: currentStep,
@@ -1355,10 +1303,10 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       }));
 
       if (verificationResult.nameMatch === false) {
-        let nameMismatchMessage = `NAME VERIFICATION FAILED\n\n`;
+        let nameMismatchMessage = `❌ NAME VERIFICATION FAILED\n\n`;
         nameMismatchMessage += `**Expected Name:** ${candidateName}\n`;
         nameMismatchMessage += `**Name on Document:** ${verificationResult.extractedName || 'Not found'}\n\n`;
-        nameMismatchMessage += `CRITICAL: The name on the document does not match your registered name.\n\n`;
+        nameMismatchMessage += `⚠️ **CRITICAL:** The name on the document does not match your registered name.\n\n`;
         
         if (verificationResult.issues && verificationResult.issues.length > 0) {
           nameMismatchMessage += '**Issues:**\n';
@@ -1374,7 +1322,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       }
 
       if (!verificationResult.isValid || verificationResult.confidence < 0.7) {
-        let failureMessage = `Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
+        let failureMessage = `❌ Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
         failureMessage += `${verificationResult.aiAnalysis}\n\n`;
         
         if (verificationResult.issues && verificationResult.issues.length > 0) {
@@ -1404,8 +1352,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         throw new Error('Failed to upload to Airtable');
       }
 
-      let successMessage = `${getDocumentLabel(currentStep)} verified successfully!\n\n`;
-      successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName}\n`;
+      let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
+      successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`;
       successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
       
       if (Object.keys(verificationResult.extractedData).length > 0) {
@@ -1424,17 +1372,14 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     } catch (err) {
       addAgentMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       
-      // Ensure audio is resumed even on error
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         try {
           await audioContextRef.current.resume();
-          console.log('▶️ Audio context resumed after error');
         } catch (resumeErr) {
           console.log('Could not resume audio context:', resumeErr);
         }
       }
       
-      await new Promise(resolve => setTimeout(resolve, 200));
       setConversationEnabled(true);
       
       wsRef.current?.send(JSON.stringify({
@@ -1480,54 +1425,23 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     scrollToBottom();
   }, [messages]);
 
-  const StatusIcon = () => {
-    let icon;
-    let color;
-    let shadowColor;
-    let label;
-
-    if (!conversationEnabled) {
-      icon = <IconPause />;
-      color = '#9ca3af'; // Gray
-      label = 'PAUSED';
-    } else if (agentIsSpeaking) {
-      icon = <IconAgent />;
-      color = '#2563eb'; // Blue
-      shadowColor = 'rgba(37, 99, 235, 0.6)';
-      label = 'AGENT SPEAKING';
-    } else if (isSpeaking) {
-      icon = <IconMic />;
-      color = '#10b981'; // Green
-      shadowColor = 'rgba(16, 185, 129, 0.6)';
-      label = 'YOU SPEAKING';
-    } else {
-      icon = <IconUser />;
-      color = '#6b7280'; // Dark Gray
-      label = 'READY';
-    }
-
-    return { icon, color, shadowColor, label };
-  };
-
-  const { icon, color, shadowColor, label } = StatusIcon();
-
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9' }}>
-        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.1)' }}>
-          <IconWarning />
-          <h2 style={{ color: '#1f2937' }}>Error</h2>
-          <p style={{ color: '#6b7280' }}>{error}</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center' }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠</div>
+          <h2>Error</h2>
+          <p>{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: '20px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto', height: '85vh', background: 'white', borderRadius: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px', fontFamily: 'system-ui' }}>
+      <div style={{ maxWidth: '800px', margin: '0 auto', height: '85vh', background: 'white', borderRadius: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
-        <div style={{ padding: '24px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
+        <div style={{ padding: '24px', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700' }}>AI Voice Document Assistant</h1>
@@ -1541,20 +1455,19 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 width: '60px',
                 height: '60px',
                 borderRadius: '50%',
-                background: color,
+                background: !conversationEnabled ? '#9ca3af' : (agentIsSpeaking ? '#ef4444' : (isSpeaking ? '#10b981' : '#6b7280')),
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '24px',
-                color: 'white',
                 transition: 'all 0.2s ease',
-                boxShadow: shadowColor ? `0 0 20px ${shadowColor}` : '0 0 10px rgba(107, 114, 128, 0.5)',
+                boxShadow: !conversationEnabled ? 'none' : (agentIsSpeaking ? '0 0 20px rgba(239, 68, 68, 0.8)' : (isSpeaking ? '0 0 20px rgba(16, 185, 129, 0.8)' : '0 0 10px rgba(107, 114, 128, 0.5)')),
                 animation: (isSpeaking || agentIsSpeaking) ? 'pulse 1.5s infinite' : 'none'
               }}>
-                {icon}
+                {!conversationEnabled ? '⏸️' : (agentIsSpeaking ? '🤖' : (isSpeaking ? '🎤' : '👤'))}
               </div>
               <div style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9 }}>
-                {label}
+                {!conversationEnabled ? 'PAUSED' : (agentIsSpeaking ? 'AGENT SPEAKING' : (isSpeaking ? 'YOU SPEAKING' : 'READY'))}
               </div>
               <div style={{ 
                 width: '60px', 
@@ -1566,24 +1479,16 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 <div style={{
                   height: '100%',
                   width: `${Math.min((audioLevel / 100) * 100, 100)}%`,
-                  background: color,
+                  background: !conversationEnabled ? '#9ca3af' : (agentIsSpeaking ? '#ef4444' : (isSpeaking ? '#10b981' : '#6b7280')),
                   transition: 'width 0.1s ease'
                 }} />
               </div>
             </div>
           </div>
           
-          <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
-            Status: 
-            <span style={{ 
-              width: '8px', 
-              height: '8px', 
-              borderRadius: '50%', 
-              background: isConnected ? '#10b981' : '#ef4444', 
-              margin: '0 6px' 
-            }} />
-            {isConnected ? 'Connected' : 'Disconnected'} 
-            {isVerifying && ' | Verifying Document...'}
+          <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
+            Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'} 
+            {isVerifying && ' | 📄 Verifying Document...'}
           </div>
         </div>
 
@@ -1591,21 +1496,20 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           {messages.map((message) => (
             <div key={message.id} style={{ marginBottom: '16px', display: 'flex', justifyContent: message.type === 'agent' ? 'flex-start' : 'flex-end' }}>
               <div style={{
-                background: message.type === 'agent' ? 'white' : '#2563eb',
+                background: message.type === 'agent' ? 'white' : 'linear-gradient(135deg, #667eea, #764ba2)',
                 color: message.type === 'agent' ? '#1f2937' : 'white',
                 padding: '14px 18px',
                 borderRadius: message.type === 'agent' ? '0 16px 16px 16px' : '16px 0 16px 16px',
                 maxWidth: '75%',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                border: message.type === 'agent' ? '1px solid #e2e8f0' : 'none',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 whiteSpace: 'pre-wrap',
                 fontSize: '14px',
                 lineHeight: '1.6'
               }}>
                 {message.content}
                 {message.fileName && (
-                  <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(255,255,255,0.15)', borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center' }}>
-                    <IconFile /> {message.fileName}
+                  <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(0,0,0,0.1)', borderRadius: '8px', fontSize: '12px' }}>
+                    📎 {message.fileName}
                   </div>
                 )}
               </div>
@@ -1620,8 +1524,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 padding: '14px 18px',
                 borderRadius: '0 16px 16px 16px',
                 maxWidth: '75%',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
                 fontSize: '14px',
                 lineHeight: '1.6',
                 opacity: 0.7
@@ -1651,8 +1554,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
               style={{
                 width: '100%',
                 padding: '16px',
-                background: (isVerifying || !isConnected) ? '#e5e7eb' : '#2563eb',
-                color: (isVerifying || !isConnected) ? '#9ca3af' : 'white',
+                background: (isVerifying || !isConnected) ? '#e5e7eb' : 'linear-gradient(135deg, #667eea, #764ba2)',
+                color: 'white',
                 border: 'none',
                 borderRadius: '12px',
                 fontSize: '15px',
@@ -1684,7 +1587,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       {showCompletionPopup && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: '20px', padding: '50px 40px', maxWidth: '450px', textAlign: 'center', boxShadow: '0 25px 70px rgba(0,0,0,0.4)' }}>
-            <IconCheck />
+            <div style={{ fontSize: '70px', marginBottom: '20px' }}>✅</div>
             <h2 style={{ margin: '0 0 15px', color: '#1f2937', fontSize: '28px', fontWeight: '700' }}>
               All Documents Verified!
             </h2>
@@ -1693,7 +1596,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
             </p>
             <button
               onClick={() => setShowCompletionPopup(false)}
-              style={{ padding: '14px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
+              style={{ padding: '14px 40px', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
             >
               Done
             </button>
@@ -1719,7 +1622,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
   try {
     const response = await fetch(
-      `https.api.airtable.com/v0/appMvECrw7CrJFCO0/tblqaH9RrTO6JuG5N/${recordId}`,
+      `https://api.airtable.com/v0/appMvECrw7CrJFCO0/tblqaH9RrTO6JuG5N/${recordId}`,
       {
         headers: {
           Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
