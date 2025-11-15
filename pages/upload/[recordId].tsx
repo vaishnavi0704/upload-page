@@ -873,12 +873,13 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
             clearTimeout(audioStreamTimeoutRef.current);
           }
           
+          console.log('📨 Received audio delta chunk');
           playAudioDelta(data.delta);
           
           // Set a timeout to detect end of stream (no new deltas for 500ms)
           audioStreamTimeoutRef.current = setTimeout(() => {
             isStreamingAudioRef.current = false;
-            console.log('🎵 Audio stream appears to have ended');
+            console.log('🎵 Audio stream appears to have ended (timeout)');
           }, 500);
           
         } else if (data.type === 'audio_complete') {
@@ -1079,14 +1080,13 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7FFF);
       }
 
-      // Store the audio data instead of immediately creating buffers
+      // Store the audio data - ALWAYS buffer, never skip
       pendingAudioBuffersRef.current.push(float32);
+      console.log(`🎵 Buffered audio chunk ${pendingAudioBuffersRef.current.length}, size: ${float32.length}`);
       
-      // If we have enough data buffered (e.g., 3 chunks), start playing
-      // This prevents choppy playback from processing too-small chunks
-      if (pendingAudioBuffersRef.current.length >= 2 || !isPlayingRef.current) {
-        flushPendingAudio();
-      }
+      // Process buffered audio immediately to avoid delay
+      // We flush on every chunk to ensure continuous playback from the start
+      flushPendingAudio();
       
     } catch (err) {
       console.error('Audio playback error:', err);
@@ -1110,18 +1110,21 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         offset += buffer.length;
       }
       
-      // Clear the pending buffers
+      // Clear the pending buffers immediately after combining
       pendingAudioBuffersRef.current = [];
       
       // Create audio buffer from combined data
       const audioBuffer = audioContextRef.current.createBuffer(1, combined.length, 24000);
       audioBuffer.getChannelData(0).set(combined);
       
-      // Add to play queue
+      // Add to play queue - this ensures ALL audio is queued
       audioQueueRef.current.push(audioBuffer);
+      console.log(`🎵 Added buffer to queue. Queue length: ${audioQueueRef.current.length}, Buffer duration: ${audioBuffer.duration.toFixed(2)}s`);
       
-      // Start playback if not already playing
+      // Start playback immediately if not already playing
+      // This ensures the FIRST chunk starts playing right away
       if (!isPlayingRef.current) {
+        console.log('🎵 Starting playback from beginning');
         playNextAudio();
       }
     } catch (err) {
@@ -1134,6 +1137,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       isPlayingRef.current = false;
       // Only clear speaking state if we're not actively streaming
       if (!isStreamingAudioRef.current) {
+        console.log('🎵 Playback complete - no more audio in queue');
         setAgentIsSpeaking(false);
       }
       return;
@@ -1143,15 +1147,28 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     setAgentIsSpeaking(true);
     const audioBuffer = audioQueueRef.current.shift()!;
     
+    console.log(`🎵 Playing audio buffer: duration ${audioBuffer.duration.toFixed(2)}s, remaining in queue: ${audioQueueRef.current.length}`);
+    
     const source = audioContextRef.current.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioContextRef.current.destination);
     source.onended = () => {
+      console.log('🎵 Audio chunk finished playing');
       currentAudioSourceRef.current = null;
+      // Immediately play next chunk to avoid gaps
       playNextAudio();
     };
     currentAudioSourceRef.current = source;
-    source.start();
+    
+    try {
+      source.start(0); // Always start from the beginning (time 0)
+      console.log('🎵 Audio playback started');
+    } catch (err) {
+      console.error('Error starting audio:', err);
+      // Try to recover by playing next
+      currentAudioSourceRef.current = null;
+      playNextAudio();
+    }
   };
 
   const stopAgentAudio = () => {
