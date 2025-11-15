@@ -773,7 +773,6 @@
 //   }
 // };
 
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -817,10 +816,16 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   const animationFrameRef = useRef<number | null>(null);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   
-  // NEW: Track pending audio data to prevent premature clearing
-  const pendingAudioBuffersRef = useRef<Float32Array[]>([]);
-  const isStreamingAudioRef = useRef<boolean>(false);
-  const audioStreamTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // NEW: Accumulate ALL audio chunks before playing
+  const allAudioChunksRef = useRef<Float32Array[]>([]);
+  const isReceivingAudioRef = useRef<boolean>(false);
+  const audioCompleteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // NEW: Voice Activity Detection for sentence-level interruption
+  const voiceActivityBufferRef = useRef<number[]>([]);
+  const isSpeakingContinuouslyRef = useRef<boolean>(false);
+  const speechStartTimeRef = useRef<number>(0);
+  const MIN_SPEECH_DURATION_MS = 1500; // Only interrupt after 1.5 seconds of continuous speech
 
   
   useEffect(() => {
@@ -864,41 +869,33 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           setCurrentAgentMessage('');
           // Don't immediately set agentIsSpeaking to false - wait for audio to finish
         } else if (data.type === 'audio_delta') {
-          // Mark that we're actively streaming audio
-          isStreamingAudioRef.current = true;
+          // Accumulate audio chunks - DON'T play yet
+          isReceivingAudioRef.current = true;
           setAgentIsSpeaking(true);
           
-          // Clear any existing timeout
-          if (audioStreamTimeoutRef.current) {
-            clearTimeout(audioStreamTimeoutRef.current);
+          // Clear the completion timeout
+          if (audioCompleteTimeoutRef.current) {
+            clearTimeout(audioCompleteTimeoutRef.current);
           }
           
-          console.log('📨 Received audio delta chunk');
-          playAudioDelta(data.delta);
+          // Store the chunk
+          storeAudioChunk(data.delta);
           
-          // Set a timeout to detect end of stream (no new deltas for 500ms)
-          audioStreamTimeoutRef.current = setTimeout(() => {
-            isStreamingAudioRef.current = false;
-            console.log('🎵 Audio stream appears to have ended (timeout)');
-          }, 500);
+          // Set timeout to detect when streaming is complete (300ms of no new data)
+          audioCompleteTimeoutRef.current = setTimeout(() => {
+            console.log('🎵 Audio streaming complete - playing accumulated audio');
+            playAccumulatedAudio();
+          }, 300);
           
         } else if (data.type === 'audio_complete') {
-          // Clear streaming flag and timeout
-          isStreamingAudioRef.current = false;
-          if (audioStreamTimeoutRef.current) {
-            clearTimeout(audioStreamTimeoutRef.current);
+          // Server explicitly says audio is complete
+          if (audioCompleteTimeoutRef.current) {
+            clearTimeout(audioCompleteTimeoutRef.current);
           }
           
-          // Process any remaining buffered audio
-          if (pendingAudioBuffersRef.current.length > 0) {
-            console.log(`🎵 Processing ${pendingAudioBuffersRef.current.length} remaining audio buffers`);
-            flushPendingAudio();
-          }
-          
-          // Only set agentIsSpeaking to false after all audio is done
-          if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-            setAgentIsSpeaking(false);
-          }
+          console.log('🎵 Received audio_complete - playing all accumulated audio');
+          isReceivingAudioRef.current = false;
+          playAccumulatedAudio();
         } else if (data.type === 'user_transcript') {
           addUserMessage(data.content);
         } else if (data.type === 'user_started_speaking') {
@@ -934,8 +931,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
 
     return () => {
       wsRef.current?.close();
-      if (audioStreamTimeoutRef.current) {
-        clearTimeout(audioStreamTimeoutRef.current);
+      if (audioCompleteTimeoutRef.current) {
+        clearTimeout(audioCompleteTimeoutRef.current);
       }
     };
   }, [candidateName, recordId]);
@@ -1008,7 +1005,6 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
 
     const bufferLength = analyserRef.current.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
-    let lastSpeakingState = false;
 
     const checkAudioLevel = () => {
       if (!analyserRef.current) return;
@@ -1021,24 +1017,46 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       setAudioLevel(average);
       
       const voiceThreshold = 20;
-      const currentlySpeaking = average > voiceThreshold && conversationEnabled && !agentIsSpeaking;
+      const isSpeakingNow = average > voiceThreshold && conversationEnabled && !agentIsSpeaking;
       
-      if (currentlySpeaking && !lastSpeakingState) {
-        console.log('🎤 User started speaking');
-        setIsSpeaking(true);
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'user_speech_start'
-          }));
-        }
-        stopAgentAudio();
-      } else if (!currentlySpeaking && lastSpeakingState) {
-        console.log('🔇 User stopped speaking');
-        setIsSpeaking(false);
+      // Add to rolling buffer (last 10 frames)
+      voiceActivityBufferRef.current.push(isSpeakingNow ? 1 : 0);
+      if (voiceActivityBufferRef.current.length > 10) {
+        voiceActivityBufferRef.current.shift();
       }
       
-      lastSpeakingState = currentlySpeaking;
-      setIsSpeaking(currentlySpeaking);
+      // Check if consistently speaking (7 out of 10 frames)
+      const speakingFrames = voiceActivityBufferRef.current.reduce((a, b) => a + b, 0);
+      const isConsistentlySpeaking = speakingFrames >= 7;
+      
+      // Track continuous speech duration
+      if (isConsistentlySpeaking && !isSpeakingContinuouslyRef.current) {
+        // Started speaking continuously
+        isSpeakingContinuouslyRef.current = true;
+        speechStartTimeRef.current = Date.now();
+        setIsSpeaking(true);
+        console.log('🎤 User started speaking continuously');
+      } else if (!isConsistentlySpeaking && isSpeakingContinuouslyRef.current) {
+        // Stopped speaking
+        isSpeakingContinuouslyRef.current = false;
+        setIsSpeaking(false);
+        console.log('🔇 User stopped speaking');
+      }
+      
+      // Only interrupt agent if user has been speaking for MIN_SPEECH_DURATION_MS
+      if (isSpeakingContinuouslyRef.current) {
+        const speechDuration = Date.now() - speechStartTimeRef.current;
+        
+        if (speechDuration >= MIN_SPEECH_DURATION_MS && agentIsSpeaking) {
+          console.log(`🎤 User speaking for ${speechDuration}ms - interrupting agent`);
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'user_speech_start'
+            }));
+          }
+          stopAgentAudio();
+        }
+      }
 
       animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
     };
@@ -1064,9 +1082,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     return btoa(binary);
   };
 
-  const playAudioDelta = async (base64Delta: string) => {
-    if (!audioContextRef.current) return;
-
+  // NEW: Store audio chunk without playing
+  const storeAudioChunk = (base64Delta: string) => {
     try {
       const binaryString = atob(base64Delta);
       const bytes = new Uint8Array(binaryString.length);
@@ -1080,95 +1097,80 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7FFF);
       }
 
-      // Store the audio data - ALWAYS buffer, never skip
-      pendingAudioBuffersRef.current.push(float32);
-      console.log(`🎵 Buffered audio chunk ${pendingAudioBuffersRef.current.length}, size: ${float32.length}`);
-      
-      // Process buffered audio immediately to avoid delay
-      // We flush on every chunk to ensure continuous playback from the start
-      flushPendingAudio();
-      
+      // Just store it - don't play yet
+      allAudioChunksRef.current.push(float32);
+      console.log(`🎵 Stored chunk ${allAudioChunksRef.current.length}, size: ${float32.length}`);
     } catch (err) {
-      console.error('Audio playback error:', err);
+      console.error('Error storing audio chunk:', err);
     }
   };
 
-  // NEW: Function to process pending audio buffers
-  const flushPendingAudio = () => {
-    if (!audioContextRef.current || pendingAudioBuffersRef.current.length === 0) {
+  // NEW: Play all accumulated audio at once
+  const playAccumulatedAudio = () => {
+    if (!audioContextRef.current || allAudioChunksRef.current.length === 0) {
+      console.log('⚠️ No audio to play');
+      isReceivingAudioRef.current = false;
+      setAgentIsSpeaking(false);
       return;
     }
 
     try {
-      // Combine all pending buffers into one
-      const totalLength = pendingAudioBuffersRef.current.reduce((sum, buf) => sum + buf.length, 0);
-      const combined = new Float32Array(totalLength);
+      console.log(`🎵 Playing ${allAudioChunksRef.current.length} accumulated chunks`);
+      
+      // Combine ALL chunks into one complete audio buffer
+      const totalLength = allAudioChunksRef.current.reduce((sum, chunk) => sum + chunk.length, 0);
+      const combinedAudio = new Float32Array(totalLength);
       
       let offset = 0;
-      for (const buffer of pendingAudioBuffersRef.current) {
-        combined.set(buffer, offset);
-        offset += buffer.length;
+      for (const chunk of allAudioChunksRef.current) {
+        combinedAudio.set(chunk, offset);
+        offset += chunk.length;
       }
       
-      // Clear the pending buffers immediately after combining
-      pendingAudioBuffersRef.current = [];
+      // Clear the accumulated chunks
+      allAudioChunksRef.current = [];
       
-      // Create audio buffer from combined data
-      const audioBuffer = audioContextRef.current.createBuffer(1, combined.length, 24000);
-      audioBuffer.getChannelData(0).set(combined);
+      // Create one complete audio buffer
+      const audioBuffer = audioContextRef.current.createBuffer(1, combinedAudio.length, 24000);
+      audioBuffer.getChannelData(0).set(combinedAudio);
       
-      // Add to play queue - this ensures ALL audio is queued
-      audioQueueRef.current.push(audioBuffer);
-      console.log(`🎵 Added buffer to queue. Queue length: ${audioQueueRef.current.length}, Buffer duration: ${audioBuffer.duration.toFixed(2)}s`);
+      console.log(`🎵 Created complete audio buffer: ${audioBuffer.duration.toFixed(2)}s`);
       
-      // Start playback immediately if not already playing
-      // This ensures the FIRST chunk starts playing right away
-      if (!isPlayingRef.current) {
-        console.log('🎵 Starting playback from beginning');
-        playNextAudio();
-      }
+      // Play it immediately
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContextRef.current.destination);
+      
+      source.onended = () => {
+        console.log('🎵 Audio playback complete');
+        currentAudioSourceRef.current = null;
+        isPlayingRef.current = false;
+        setAgentIsSpeaking(false);
+      };
+      
+      currentAudioSourceRef.current = source;
+      isPlayingRef.current = true;
+      setAgentIsSpeaking(true);
+      
+      source.start(0);
+      console.log('🎵 Started playing complete audio from beginning');
+      
     } catch (err) {
-      console.error('Error flushing audio buffers:', err);
+      console.error('Error playing accumulated audio:', err);
+      allAudioChunksRef.current = [];
+      isReceivingAudioRef.current = false;
+      setAgentIsSpeaking(false);
     }
+  };
+
+  const playAudioDelta = async (base64Delta: string) => {
+    // This function is deprecated - we now use storeAudioChunk and playAccumulatedAudio
+    console.warn('playAudioDelta called but is deprecated');
   };
 
   const playNextAudio = () => {
-    if (audioQueueRef.current.length === 0 || !audioContextRef.current) {
-      isPlayingRef.current = false;
-      // Only clear speaking state if we're not actively streaming
-      if (!isStreamingAudioRef.current) {
-        console.log('🎵 Playback complete - no more audio in queue');
-        setAgentIsSpeaking(false);
-      }
-      return;
-    }
-
-    isPlayingRef.current = true;
-    setAgentIsSpeaking(true);
-    const audioBuffer = audioQueueRef.current.shift()!;
-    
-    console.log(`🎵 Playing audio buffer: duration ${audioBuffer.duration.toFixed(2)}s, remaining in queue: ${audioQueueRef.current.length}`);
-    
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContextRef.current.destination);
-    source.onended = () => {
-      console.log('🎵 Audio chunk finished playing');
-      currentAudioSourceRef.current = null;
-      // Immediately play next chunk to avoid gaps
-      playNextAudio();
-    };
-    currentAudioSourceRef.current = source;
-    
-    try {
-      source.start(0); // Always start from the beginning (time 0)
-      console.log('🎵 Audio playback started');
-    } catch (err) {
-      console.error('Error starting audio:', err);
-      // Try to recover by playing next
-      currentAudioSourceRef.current = null;
-      playNextAudio();
-    }
+    // This function is deprecated - we now play complete audio at once
+    console.warn('playNextAudio called but is deprecated');
   };
 
   const stopAgentAudio = () => {
@@ -1176,12 +1178,12 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     
     // Clear all audio-related state
     audioQueueRef.current = [];
-    pendingAudioBuffersRef.current = [];
+    allAudioChunksRef.current = [];
     isPlayingRef.current = false;
-    isStreamingAudioRef.current = false;
+    isReceivingAudioRef.current = false;
     
-    if (audioStreamTimeoutRef.current) {
-      clearTimeout(audioStreamTimeoutRef.current);
+    if (audioCompleteTimeoutRef.current) {
+      clearTimeout(audioCompleteTimeoutRef.current);
     }
     
     setAgentIsSpeaking(false);
