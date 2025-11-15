@@ -777,8 +777,6 @@
 
 
 
-
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -910,8 +908,13 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           setCurrentAgentMessage('');
           setAgentIsSpeaking(false);
         } else if (data.type === 'audio_delta') {
-          setAgentIsSpeaking(true);
-          playAudioDelta(data.delta);
+          // Ensure audio context is ready before playing
+          if (audioContextRef.current && audioContextRef.current.state === 'running') {
+            setAgentIsSpeaking(true);
+            playAudioDelta(data.delta);
+          } else {
+            console.warn('⚠️ Received audio_delta but audio context not running');
+          }
         } else if (data.type === 'audio_complete') {
           setAgentIsSpeaking(false);
           const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
@@ -1104,7 +1107,22 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   };
 
   const playAudioDelta = async (base64Delta: string) => {
-    if (!audioContextRef.current) return;
+    if (!audioContextRef.current) {
+      console.warn('⚠️ Audio context not available, skipping audio delta');
+      return;
+    }
+
+    if (audioContextRef.current.state !== 'running') {
+      console.warn('⚠️ Audio context not running, attempting to resume before playing');
+      try {
+        await audioContextRef.current.resume();
+        // Small delay to ensure it's truly running
+        await new Promise(resolve => setTimeout(resolve, 100));
+      } catch (err) {
+        console.error('Could not resume audio context:', err);
+        return;
+      }
+    }
 
     try {
       const binaryString = atob(base64Delta);
@@ -1123,8 +1141,10 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       audioBuffer.getChannelData(0).set(float32);
 
       audioQueueRef.current.push(audioBuffer);
+      console.log(`🎵 Audio chunk queued (queue size: ${audioQueueRef.current.length})`);
       
       if (!isPlayingRef.current) {
+        console.log('▶️ Starting audio playback');
         playNextAudio();
       }
     } catch (err) {
@@ -1198,6 +1218,13 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
 
   // Helper function to resume audio and notify backend after verification
   const resumeAudioAndNotify = async (verificationResult: any) => {
+    console.log('🔄 Starting audio resumption process...');
+    
+    // Clear any stale audio in the queue
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    console.log('🧹 Cleared audio queue');
+    
     // Resume audio context BEFORE re-enabling conversation and sending results
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       try {
@@ -1208,17 +1235,33 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       }
     }
 
-    // Delay to ensure audio pipeline is fully ready (300ms total)
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Wait longer to ensure audio context is truly ready
+    console.log('⏳ Waiting for audio pipeline to stabilize...');
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    // Verify audio context is actually running
+    if (audioContextRef.current) {
+      console.log('🔊 Audio context state:', audioContextRef.current.state);
+      if (audioContextRef.current.state !== 'running') {
+        console.warn('⚠️ Audio context not running, attempting resume again...');
+        try {
+          await audioContextRef.current.resume();
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (err) {
+          console.log('Could not resume audio context on retry:', err);
+        }
+      }
+    }
 
     console.log('🔓 Re-enabling conversation after verification');
     setConversationEnabled(true);
 
-    // Additional delay before sending to ensure frontend is ready to receive audio
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Additional longer delay before sending to ensure frontend is completely ready
+    console.log('⏳ Final preparation before sending result...');
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     // NOW send verification result - audio system is ready to receive response
-    console.log('📤 Sending verification result to backend');
+    console.log('📤 Sending verification result to backend - agent will now speak');
     wsRef.current?.send(JSON.stringify({
       type: 'verification_result',
       documentType: currentStep,
@@ -1234,6 +1277,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         extractedName: verificationResult.extractedName || '',
       }
     }));
+    
+    console.log('✅ Verification result sent, agent should speak complete sentences now');
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
