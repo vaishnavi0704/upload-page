@@ -772,7 +772,6 @@
 //     };
 //   }
 // };
-
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
 
@@ -825,7 +824,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   const voiceActivityBufferRef = useRef<number[]>([]);
   const isSpeakingContinuouslyRef = useRef<boolean>(false);
   const speechStartTimeRef = useRef<number>(0);
-  const MIN_SPEECH_DURATION_MS = 3000; // Only interrupt after 1.5 seconds of continuous speech
+  const MIN_SPEECH_DURATION_MS = 1500; // Only interrupt after 1.5 seconds of continuous speech
 
   
   useEffect(() => {
@@ -1114,6 +1113,18 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       return;
     }
 
+    // Stop any currently playing audio to prevent overlap
+    if (currentAudioSourceRef.current) {
+      try {
+        currentAudioSourceRef.current.stop();
+        console.log('🛑 Stopped previous audio to prevent overlap');
+      } catch (err) {
+        console.warn('Could not stop previous audio source:', err);
+      }
+      currentAudioSourceRef.current = null;
+      isPlayingRef.current = false;
+    }
+
     try {
       console.log(`🎵 Playing ${allAudioChunksRef.current.length} accumulated chunks`);
       
@@ -1273,6 +1284,9 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       if (!verifyResponse.ok) throw new Error('Verification failed');
       const verificationResult = await verifyResponse.json();
 
+      // Add "Hmmmmmmmm..." message after validation
+      addAgentMessage('Hmmmmmmmm...');
+
       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
         try {
           await audioContextRef.current.resume();
@@ -1350,7 +1364,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         throw new Error('Failed to upload to Airtable');
       }
 
-      let successMessage = `✅ ${getDocumentLabel(currentStep)} hmmmmmmmmmmmmmm verified successfully!\n\n`;
+      let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
       successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`;
       successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
       
@@ -1425,7 +1439,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
 
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#005A9C' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white' }}>
         <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠</div>
           <h2>Error</h2>
@@ -1436,7 +1450,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#005A9C', padding: '20px', fontFamily: 'system-ui' }}>
+    <div style={{ minHeight: '100vh', background: 'white', padding: '20px', fontFamily: 'system-ui' }}>
       <div style={{ maxWidth: '800px', margin: '0 auto', height: '85vh', background: 'white', borderRadius: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
         <div style={{ padding: '24px', background: '#005A9C', color: 'white' }}>
@@ -1462,7 +1476,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 boxShadow: !conversationEnabled ? 'none' : (agentIsSpeaking ? '0 0 20px rgba(239, 68, 68, 0.8)' : (isSpeaking ? '0 0 20px rgba(16, 185, 129, 0.8)' : '0 0 10px rgba(107, 114, 128, 0.5)')),
                 animation: (isSpeaking || agentIsSpeaking) ? 'pulse 1.5s infinite' : 'none'
               }}>
-                {!conversationEnabled ? '' : (agentIsSpeaking ? '' : (isSpeaking ? '🎤' : '👤'))}
+                {!conversationEnabled ? '⏸️' : (agentIsSpeaking ? '🤖' : (isSpeaking ? '🎤' : '👤'))}
               </div>
               <div style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9 }}>
                 {!conversationEnabled ? 'PAUSED' : (agentIsSpeaking ? 'AGENT SPEAKING' : (isSpeaking ? 'YOU SPEAKING' : 'READY'))}
