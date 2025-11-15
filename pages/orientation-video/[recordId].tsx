@@ -879,7 +879,7 @@ const IconPencil = () => (
 );
 const IconLightBulb = () => (
   <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="20" height="20" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v.01M7.702 4.577a.75.75 0 01.043.96l-1.76 4.4a.75.75 0 00.32 1.018l3.6-1.8a.75.75 0 01.96.043l2.47 2.47a.75.75 0 01.043.96l-1.76 4.4a.75.75 0 00.32 1.018l3.6-1.8a.75.75 0 01.96.043l2.47 2.47a.75.75 0 01.043.96l-1.76 4.4a.75.75 0 00.32 1.018l3.6-1.8a.75.75 0 01.96.043c.41.41.62.97.62 1.56a3.75 3.75 0 01-3.75 3.75H9.75A3.75 3.75 0 016 18c0-.59.21-1.15.62-1.56.41-.41.62-.97.62-1.56l-1.76-4.4a.75.75 0 00.32-1.018l3.6 1.8a.75.75 0 01.96-.043l2.47-2.47a.75.75 0 01.043-.96l-1.76-4.4a.75.75 0 00.32-1.018l3.6 1.8a.75.75 0 01.96-.043l2.47-2.47a.75.75 0 01.043-.96l-1.76-4.4a.75.75 0 00-.32-1.018l-3.6 1.8a.75.75 0 01-.96.043L9.75 6.03a.75.75 0 01-.043-.96l1.76-4.4a.75.75 0 00-.32-1.018l-3.6 1.8a.75.75 0 01-.96.043z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v.01M7.702 4.577a.75.75 0 01.043.96l-1.76 4.4a.75.75 0 00.32 1.018l3.6-1.8a.75.75 0 01.96.043l2.47 2.47a.75.75 0 01.043.96l-1.76 4.4a.75.75 0 00.32 1.018l3.6-1.8a.75.75 0 01.96.043l2.47 2.47a.75.75 0 01.043.96l-1.76 4.4a.75.75 0 00.32 1.018l3.6-1.8a.75.75 0 01.96.043c.41.41.62.97.62 1.56a3.75 3.75 0 01-3.75 3.75H9.75A3.75 3.75 0 016 18c0-.59.21-1.15.62-1.56.41-.41.62-.97.62-1.56l-1.76-4.4a.75.75 0 00.32-1.018l3.6 1.8a.75.75 0 01.96-.043l2.47-2.47a.75.75 0 01.043-.96l-1.76-4.4a.75.75 0 00.32-1.018l3.6 1.8a.75.75 0 01-.96.043l-2.47-2.47a.75.75 0 01-.043-.96l1.76-4.4a.75.75 0 00-.32-1.018l-3.6 1.8a.75.75 0 01-.96.043z" />
   </svg>
 );
 const IconCheck = () => (
@@ -985,12 +985,13 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [watchProgress, setWatchProgress] = useState(0);
   const [videoStarted, setVideoStarted] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
   
   // Quiz state
   const [quizAnswers, setQuizAnswers] = useState<{ [key: number]: number }>({});
-  const [showQuiz, setShowQuiz] = useState(false);
   const [quizCompleted, setQuizCompleted] = useState(false);
+  
+  // Page state management
+  const [pageState, setPageState] = useState<'video' | 'quiz' | 'submit' | 'success'>('video');
   
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -1052,7 +1053,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
             if (event.data === window.YT.PlayerState.ENDED) {
               setVideoWatched(true);
               setWatchProgress(100);
-              setShowQuiz(true);
+              setPageState('quiz'); // Changed: Move to quiz page
             }
           },
         },
@@ -1085,6 +1086,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
     }
 
     setQuizCompleted(true);
+    setPageState('submit'); // Changed: Move to submit page
   };
 
   const handleSubmit = async () => {
@@ -1110,7 +1112,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
         throw new Error(data.error || 'Failed to submit confirmation');
       }
 
-      setSubmitSuccess(true);
+      setPageState('success'); // Changed: Move to success page
       
       setTimeout(() => {
         // In a real app, you might redirect: router.push('/next-step');
@@ -1171,7 +1173,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
         padding: '20px 0'
       }}>
         <div style={{
-          maxWidth: '800px', // Changed: Narrower container
+          maxWidth: '800px', // Narrower container
           margin: '0 auto',
           padding: '0 20px',
           display: 'flex',
@@ -1214,196 +1216,187 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
       {/* Main Content */}
       <div style={{ padding: '40px 20px' }}>
         <div style={{
-          maxWidth: '800px', // Changed: Narrower container
+          maxWidth: '800px', // Narrower container
           margin: '0 auto'
         }}>
-          {/* Welcome Card */}
-          <div style={{
-            background: 'white',
-            borderRadius: '16px',
-            padding: '32px',
-            marginBottom: '32px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
-            textAlign: 'center'
-          }}>
-            <div style={{
-              width: '80px',
-              height: '80px',
-              background: submitSuccess ? '#dcfce7' : '#dbeafe', // Light green or light blue
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 20px',
-              color: submitSuccess ? '#10b981' : '#2563eb' // Green or blue
-            }}>
-              {submitSuccess ? <IconCheck /> : <IconUser />}
-            </div>
-            <h2 style={{
-              color: '#1f2937',
-              fontSize: '28px',
-              fontWeight: '700',
-              marginBottom: '8px'
-            }}>
-              {submitSuccess ? 'Orientation Complete!' : `Welcome, ${candidateName}!`}
-            </h2>
-            <p style={{
-              color: '#6b7280',
-              fontSize: '16px',
-              lineHeight: '1.6',
-              marginBottom: '0'
-            }}>
-              {submitSuccess
-                ? 'Thank you for completing the orientation video. Your onboarding process will continue shortly.'
-                : 'Please watch our orientation video to learn about our company culture, values, and what to expect in your new role.'
-              }
-            </p>
-          </div>
-
-          {/* Video Section */}
-          <div style={{
-            background: 'white',
-            borderRadius: '16px',
-            padding: '32px',
-            marginBottom: '32px',
-            boxShadow: '0 10px 25px rgba(0,0,0,0.05)'
-          }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              marginBottom: '24px'
-            }}>
+          
+          {/* === VIDEO PAGE === */}
+          {pageState === 'video' && (
+            <>
+              {/* Welcome Card */}
               <div style={{
-                width: '40px',
-                height: '40px',
-                background: videoWatched ? '#dcfce7' : '#fee2e2', // Light green or light red
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: videoWatched ? '#10b981' : '#ef4444' // Green or red
+                background: 'white',
+                borderRadius: '16px',
+                padding: '32px',
+                marginBottom: '32px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.05)',
+                textAlign: 'center'
               }}>
-                {videoWatched ? <IconCheck /> : <IconVideoCamera />}
-              </div>
-              <div>
-                <h3 style={{
-                  color: '#1f2937',
-                  fontSize: '20px',
-                  fontWeight: '600',
-                  margin: 0,
-                  marginBottom: '4px'
-                }}>
-                  Company Orientation Video
-                </h3>
-                <p style={{
-                  color: '#6b7280',
-                  fontSize: '14px',
-                  margin: 0
-                }}>
-                  {videoWatched ? 'Video completed!' : videoStarted ? 'Currently watching...' : 'Ready to start'}
-                </p>
-              </div>
-            </div>
-
-            {/* Video Container */}
-            <div style={{
-              position: 'relative',
-              width: '100%',
-              margin: '0 auto',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              boxShadow: '0 8px 25px rgba(0,0,0,0.1)'
-            }}>
-              <div id="youtube-player" style={{
-                borderRadius: '12px',
-                overflow: 'hidden'
-              }}></div>
-            </div>
-
-            {/* Progress Bar */}
-            {videoStarted && !videoWatched && (
-              <div style={{ marginTop: '24px' }}>
                 <div style={{
+                  width: '80px',
+                  height: '80px',
+                  background: '#dbeafe', // Light blue
+                  borderRadius: '50%',
                   display: 'flex',
-                  justifyContent: 'space-between',
                   alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 20px',
+                  color: '#2563eb' // Blue
+                }}>
+                  <IconUser />
+                </div>
+                <h2 style={{
+                  color: '#1f2937',
+                  fontSize: '28px',
+                  fontWeight: '700',
                   marginBottom: '8px'
                 }}>
-                  <span style={{
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    color: '#374151'
-                  }}>
-                    Watch Progress
-                  </span>
-                  <span style={{
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: '#2563eb' // Blue accent
-                  }}>
-                    {Math.round(watchProgress)}%
-                  </span>
-                </div>
+                  Welcome, {candidateName}!
+                </h2>
+                <p style={{
+                  color: '#6b7280',
+                  fontSize: '16px',
+                  lineHeight: '1.6',
+                  marginBottom: '0'
+                }}>
+                  Please watch our orientation video to learn about our company culture, values, and what to expect in your new role.
+                </p>
+              </div>
+
+              {/* Video Section */}
+              <div style={{
+                background: 'white',
+                borderRadius: '16px',
+                padding: '32px',
+                marginBottom: '32px',
+                boxShadow: '0 10px 25px rgba(0,0,0,0.05)'
+              }}>
                 <div style={{
-                  background: '#f3f4f6',
-                  borderRadius: '8px',
-                  height: '8px',
-                  overflow: 'hidden'
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '24px'
                 }}>
                   <div style={{
-                    background: '#2563eb', // Blue accent
-                    height: '100%',
-                    borderRadius: '8px',
-                    width: `${watchProgress}%`,
-                    transition: 'width 0.3s ease'
+                    width: '40px',
+                    height: '40px',
+                    background: videoWatched ? '#dcfce7' : '#fee2e2', // Light green or light red
+                    borderRadius: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: videoWatched ? '#10b981' : '#ef4444' // Green or red
+                  }}>
+                    {videoWatched ? <IconCheck /> : <IconVideoCamera />}
+                  </div>
+                  <div>
+                    <h3 style={{
+                      color: '#1f2937',
+                      fontSize: '20px',
+                      fontWeight: '600',
+                      margin: 0,
+                      marginBottom: '4px'
+                    }}>
+                      Company Orientation Video
+                    </h3>
+                    <p style={{
+                      color: '#6b7280',
+                      fontSize: '14px',
+                      margin: 0
+                    }}>
+                      {videoWatched ? 'Video completed!' : videoStarted ? 'Currently watching...' : 'Ready to start'}
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{
+                  position: 'relative',
+                  width: '100%',
+                  margin: '0 auto',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  boxShadow: '0 8px 25px rgba(0,0,0,0.1)'
+                }}>
+                  <div id="youtube-player" style={{
+                    borderRadius: '12px',
+                    overflow: 'hidden'
                   }}></div>
                 </div>
-              </div>
-            )}
-          </div>
 
-          {/* Instructions Card */}
-          {!videoWatched && (
-            <div style={{
-              background: '#f0f9ff', // Light blue
-              border: '1px solid #dbeafe',
-              borderRadius: '12px',
-              padding: '20px',
-              marginBottom: '32px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                <div style={{ fontSize: '20px', marginTop: '2px', color: '#2563eb' }}>
-                  <IconLightBulb />
-                </div>
-                <div>
-                  <h4 style={{
-                    color: '#1e40af',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    margin: 0,
-                    marginBottom: '8px'
-                  }}>
-                    Important Instructions
-                  </h4>
-                  <ul style={{
-                    color: '#0369a1',
-                    fontSize: '13px',
-                    lineHeight: '1.5',
-                    margin: 0,
-                    paddingLeft: '16px'
-                  }}>
-                    <li>Watch the complete orientation video from start to finish</li>
-                    <li>After the video ends, answer 3 questions about the content</li>
-                    <li>Once you complete the quiz, you can submit your orientation</li>
-                  </ul>
+                {videoStarted && !videoWatched && (
+                  <div style={{ marginTop: '24px' }}>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '8px'
+                    }}>
+                      <span style={{ fontSize: '14px', fontWeight: '500', color: '#374151' }}>
+                        Watch Progress
+                      </span>
+                      <span style={{ fontSize: '14px', fontWeight: '600', color: '#2563eb' }}>
+                        {Math.round(watchProgress)}%
+                      </span>
+                    </div>
+                    <div style={{
+                      background: '#f3f4f6',
+                      borderRadius: '8px',
+                      height: '8px',
+                      overflow: 'hidden'
+                    }}>
+                      <div style={{
+                        background: '#2563eb',
+                        height: '100%',
+                        borderRadius: '8px',
+                        width: `${watchProgress}%`,
+                        transition: 'width 0.3s ease'
+                      }}></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Instructions Card */}
+              <div style={{
+                background: '#f0f9ff', // Light blue
+                border: '1px solid #dbeafe',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '32px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <div style={{ fontSize: '20px', marginTop: '2px', color: '#2563eb' }}>
+                    <IconLightBulb />
+                  </div>
+                  <div>
+                    <h4 style={{
+                      color: '#1e40af',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      margin: 0,
+                      marginBottom: '8px'
+                    }}>
+                      Important Instructions
+                    </h4>
+                    <ul style={{
+                      color: '#0369a1',
+                      fontSize: '13px',
+                      lineHeight: '1.5',
+                      margin: 0,
+                      paddingLeft: '16px'
+                    }}>
+                      <li>Watch the complete orientation video from start to finish</li>
+                      <li>After the video ends, a quiz will appear on the next page</li>
+                      <li>Once you complete the quiz, you can submit your orientation</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
-            </div>
+            </>
           )}
 
-          {/* Quiz Section */}
-          {showQuiz && !submitSuccess && (
+          {/* === QUIZ PAGE === */}
+          {pageState === 'quiz' && (
             <div style={{
               background: 'white',
               borderRadius: '16px',
@@ -1420,14 +1413,14 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                 <div style={{
                   width: '40px',
                   height: '40px',
-                  background: quizCompleted ? '#dcfce7' : '#dbeafe', // Light green or light blue
+                  background: '#dbeafe', // Light blue
                   borderRadius: '10px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: quizCompleted ? '#10b981' : '#2563eb' // Green or blue
+                  color: '#2563eb' // Blue
                 }}>
-                  {quizCompleted ? <IconCheck /> : <IconPencil />}
+                  <IconPencil />
                 </div>
                 <div>
                   <h3 style={{
@@ -1444,7 +1437,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                     fontSize: '14px',
                     margin: 0
                   }}>
-                    {quizCompleted ? 'Quiz completed!' : 'Answer the following questions based on the video'}
+                    Answer the following questions based on the video
                   </p>
                 </div>
               </div>
@@ -1471,16 +1464,11 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                           display: 'flex',
                           alignItems: 'center',
                           padding: '12px',
-                          background: quizAnswers[question.id] === optionIndex
-                            ? '#f0f9ff' // Light blue
-                            : '#f9fafb',
-                          border: quizAnswers[question.id] === optionIndex
-                            ? '2px solid #2563eb' // Blue
-                            : '2px solid #e5e7eb',
+                          background: quizAnswers[question.id] === optionIndex ? '#f0f9ff' : '#f9fafb',
+                          border: quizAnswers[question.id] === optionIndex ? '2px solid #2563eb' : '2px solid #e5e7eb',
                           borderRadius: '8px',
-                          cursor: quizCompleted ? 'not-allowed' : 'pointer',
+                          cursor: 'pointer',
                           transition: 'all 0.2s ease',
-                          opacity: quizCompleted ? 0.6 : 1
                         }}
                       >
                         <input
@@ -1488,14 +1476,10 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                           name={`question-${question.id}`}
                           value={optionIndex}
                           checked={quizAnswers[question.id] === optionIndex}
-                          onChange={() => !quizCompleted && handleQuizAnswerChange(question.id, optionIndex)}
-                          disabled={quizCompleted}
-                          style={{ marginRight: '12px', cursor: quizCompleted ? 'not-allowed' : 'pointer', accentColor: '#2563eb' }}
+                          onChange={() => handleQuizAnswerChange(question.id, optionIndex)}
+                          style={{ marginRight: '12px', cursor: 'pointer', accentColor: '#2563eb' }}
                         />
-                        <span style={{
-                          color: '#374151',
-                          fontSize: '14px'
-                        }}>
+                        <span style={{ color: '#374151', fontSize: '14px' }}>
                           {option}
                         </span>
                       </label>
@@ -1504,39 +1488,29 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                 </div>
               ))}
 
-              {!quizCompleted && (
-                <button
-                  onClick={handleQuizSubmit}
-                  style={{
-                    width: '100%',
-                    background: '#2563eb', // Blue
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '12px',
-                    padding: '14px 24px',
-                    fontSize: '15px',
-                    fontWeight: '600',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
-                    transition: 'all 0.3s ease'
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(37, 99, 235, 0.4)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.3)';
-                  }}
-                >
-                  Submit Quiz Answers
-                </button>
-              )}
+              <button
+                onClick={handleQuizSubmit}
+                style={{
+                  width: '100%',
+                  background: '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '14px 24px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.3)',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                Submit Quiz Answers
+              </button>
             </div>
           )}
-
-          {/* Submit Section */}
-          {videoWatched && quizCompleted && !submitSuccess && (
+          
+          {/* === SUBMIT PAGE === */}
+          {pageState === 'submit' && (
             <div style={{
               background: 'white',
               borderRadius: '16px',
@@ -1575,24 +1549,10 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
                   fontSize: '16px',
                   fontWeight: '600',
                   cursor: isSubmitting ? 'not-allowed' : 'pointer',
-                  boxShadow: isSubmitting
-                    ? 'none'
-                    : '0 4px 12px rgba(37, 99, 235, 0.3)',
+                  boxShadow: isSubmitting ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.3)',
                   transition: 'all 0.3s ease',
                   minWidth: '200px',
                   opacity: isSubmitting ? 0.6 : 1
-                }}
-                onMouseOver={(e) => {
-                  if (!isSubmitting) {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 16px rgba(37, 99, 235, 0.4)';
-                  }
-                }}
-                onMouseOut={(e) => {
-                  if (!isSubmitting) {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(37, 99, 235, 0.3)';
-                  }
                 }}
               >
                 {isSubmitting ? (
@@ -1623,8 +1583,8 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
             </div>
           )}
 
-          {/* Success Message */}
-          {submitSuccess && (
+          {/* === SUCCESS PAGE === */}
+          {pageState === 'success' && (
             <div style={{
               background: 'white',
               borderRadius: '16px',
@@ -1669,6 +1629,7 @@ export default function OrientationVideo({ candidateName, recordId, error }: Pro
               </div>
             </div>
           )}
+
         </div>
       </div>
 
