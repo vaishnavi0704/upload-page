@@ -1,3 +1,4 @@
+
 // import { useState, useEffect, useRef } from 'react';
 // import { GetServerSideProps } from 'next';
 
@@ -22,9 +23,11 @@
 //   const [isVerifying, setIsVerifying] = useState(false);
 //   const [showCompletionPopup, setShowCompletionPopup] = useState(false);
 //   const [isConnected, setIsConnected] = useState(false);
-//   const [isSpeaking, setIsSpeaking] = useState(true); // Voice activity detection
+//   const [isSpeaking, setIsSpeaking] = useState(false);
+//   const [agentIsSpeaking, setAgentIsSpeaking] = useState(false);
 //   const [audioLevel, setAudioLevel] = useState(0);
 //   const [currentAgentMessage, setCurrentAgentMessage] = useState('');
+//   const [conversationEnabled, setConversationEnabled] = useState(true);
   
 //   const messagesEndRef = useRef<HTMLDivElement>(null);
 //   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -37,6 +40,7 @@
 //   const audioQueueRef = useRef<AudioBuffer[]>([]);
 //   const isPlayingRef = useRef<boolean>(false);
 //   const animationFrameRef = useRef<number | null>(null);
+//   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   
 //   useEffect(() => {
@@ -48,9 +52,6 @@
 //       `👋 Hello, ${candidateName}! I'm your AI onboarding assistant. Let's verify your documents.\n\nPlease upload your **Identity Proof** in Image format (PNG, JPG) (Driver's License, Passport, or Government ID).`
 //     );
 //   }, [candidateName, error]);
-
-
-
 
 //   // WebSocket connection
 //   useEffect(() => {
@@ -70,35 +71,43 @@
 //       wsRef.current.onmessage = (event) => {
 //         const data = JSON.parse(event.data);
 //         console.log('📨 Received:', data.type);
-//         const playMP3Audio = (base64Audio: string) => {
-//           const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
-//           audio.play().catch(err => console.error('Audio playback failed:', err));
-//         };
         
 //         if (data.type === 'agent_message') {
 //           addAgentMessage(data.content);
 //           setCurrentAgentMessage('');
+//           setAgentIsSpeaking(false);
 //         } else if (data.type === 'agent_transcript_delta') {
 //           setCurrentAgentMessage(prev => prev + data.delta);
+//           setAgentIsSpeaking(true);
 //         } else if (data.type === 'agent_transcript_done') {
 //           addAgentMessage(data.text);
 //           setCurrentAgentMessage('');
+//           setAgentIsSpeaking(false);
 //         } else if (data.type === 'audio_delta') {
+//           setAgentIsSpeaking(true);
 //           playAudioDelta(data.delta);
+//         } else if (data.type === 'audio_complete') {
+//           setAgentIsSpeaking(false);
+//           const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+//           audio.onended = () => setAgentIsSpeaking(false);
+//           audio.play().catch(err => console.error('Audio playback failed:', err));
 //         } else if (data.type === 'user_transcript') {
 //           addUserMessage(data.content);
+//         } else if (data.type === 'user_started_speaking') {
+//           console.log('🎤 User started speaking - interrupting agent');
+//           stopAgentAudio();
 //         } else if (data.type === 'step_update') {
 //           setCurrentStep(data.step);
 //         } else if (data.type === 'complete') {
 //           setCurrentStep('complete');
 //           setShowCompletionPopup(true);
+//           setConversationEnabled(false);
 //         } else if (data.type === 'trigger_upload') {
 //           fileInputRef.current?.click();
 //         } else if (data.type === 'error') {
 //           addAgentMessage(`Error: ${data.content}`);
-//         }else if (data.type === 'audio_complete') {
-//           playMP3Audio(data.audio);
-// }
+//           setAgentIsSpeaking(false);
+//         }
 //       };
 
 //       wsRef.current.onclose = () => {
@@ -136,17 +145,15 @@
 
 //         const source = audioContextRef.current.createMediaStreamSource(stream);
         
-//         // Create analyser for voice activity detection
 //         analyserRef.current = audioContextRef.current.createAnalyser();
 //         analyserRef.current.fftSize = 2048;
 //         analyserRef.current.smoothingTimeConstant = 0.8;
 //         source.connect(analyserRef.current);
 
-//         // Create processor for sending audio
 //         processorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
         
 //         processorRef.current.onaudioprocess = (e) => {
-//           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+//           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || !conversationEnabled || agentIsSpeaking) return;
           
 //           const inputData = e.inputBuffer.getChannelData(0);
 //           const pcm16 = convertFloat32ToPCM16(inputData);
@@ -161,7 +168,6 @@
 //         source.connect(processorRef.current);
 //         processorRef.current.connect(audioContextRef.current.destination);
         
-//         // Start voice activity detection visualization
 //         detectVoiceActivity();
         
 //         console.log('🎤 Microphone initialized with voice detection');
@@ -186,27 +192,42 @@
 //     };
 //   }, [isConnected]);
 
-//   // Voice activity detection
 //   const detectVoiceActivity = () => {
 //     if (!analyserRef.current) return;
 
 //     const bufferLength = analyserRef.current.frequencyBinCount;
 //     const dataArray = new Uint8Array(bufferLength);
+//     let lastSpeakingState = false;
 
 //     const checkAudioLevel = () => {
 //       if (!analyserRef.current) return;
 
 //       analyserRef.current.getByteFrequencyData(dataArray);
       
-//       // Calculate average volume
 //       const sum = dataArray.reduce((a, b) => a + b, 0);
 //       const average = sum / bufferLength;
       
 //       setAudioLevel(average);
       
-//       // Threshold for voice detection (adjust as needed)
 //       const voiceThreshold = 20;
-//       setIsSpeaking(average > voiceThreshold);
+//       const currentlySpeaking = average > voiceThreshold && conversationEnabled && !agentIsSpeaking;
+      
+//       if (currentlySpeaking && !lastSpeakingState) {
+//         console.log('🎤 User started speaking');
+//         setIsSpeaking(true);
+//         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+//           wsRef.current.send(JSON.stringify({
+//             type: 'user_speech_start'
+//           }));
+//         }
+//         stopAgentAudio();
+//       } else if (!currentlySpeaking && lastSpeakingState) {
+//         console.log('🔇 User stopped speaking');
+//         setIsSpeaking(false);
+//       }
+      
+//       lastSpeakingState = currentlySpeaking;
+//       setIsSpeaking(currentlySpeaking);
 
 //       animationFrameRef.current = requestAnimationFrame(checkAudioLevel);
 //     };
@@ -264,17 +285,40 @@
 //   const playNextAudio = () => {
 //     if (audioQueueRef.current.length === 0 || !audioContextRef.current) {
 //       isPlayingRef.current = false;
+//       setAgentIsSpeaking(false);
 //       return;
 //     }
 
 //     isPlayingRef.current = true;
+//     setAgentIsSpeaking(true);
 //     const audioBuffer = audioQueueRef.current.shift()!;
     
 //     const source = audioContextRef.current.createBufferSource();
 //     source.buffer = audioBuffer;
 //     source.connect(audioContextRef.current.destination);
-//     source.onended = () => playNextAudio();
+//     source.onended = () => {
+//       currentAudioSourceRef.current = null;
+//       playNextAudio();
+//     };
+//     currentAudioSourceRef.current = source;
 //     source.start();
+//   };
+
+//   const stopAgentAudio = () => {
+//     console.log('🛑 Stopping agent audio');
+//     audioQueueRef.current = [];
+//     isPlayingRef.current = false;
+//     setAgentIsSpeaking(false);
+//     setCurrentAgentMessage('');
+    
+//     if (currentAudioSourceRef.current) {
+//       try {
+//         currentAudioSourceRef.current.stop();
+//         currentAudioSourceRef.current = null;
+//       } catch (err) {
+//         console.log('Could not stop audio source:', err);
+//       }
+//     }
 //   };
 
 //   const scrollToBottom = () => {
@@ -302,292 +346,185 @@
 //     setMessages((prev) => [...prev, newMessage]);
 //   };  
 
-// // 🔥 REPLACE YOUR handleFileSelect FUNCTION WITH THIS VERSION
-// // This version clears audio queue and stops playback during verification
+//   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+//     const file = e.target.files?.[0];
+//     if (!file || isVerifying || currentStep === 'complete') return;
 
+//     if (file.size > 10 * 1024 * 1024) {
+//       addAgentMessage('File size must be less than 10MB.');
+//       return;
+//     }
 
-// // 🔥 ADD THIS TO YOUR COMPONENT - UPDATED handleFileSelect with Name Verification
+//     const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+//     if (!validTypes.includes(file.type)) {
+//       addAgentMessage('Please upload a PDF or image file (JPG, PNG).');
+//       return;
+//     }
 
-// // 🔥 ADD THIS TO YOUR COMPONENT - UPDATED handleFileSelect with Name Verification
-
-// // 🔥 ADD THIS TO YOUR COMPONENT - UPDATED handleFileSelect with Name Verification
-
-//     const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-//       const file = e.target.files?.[0];
-//       if (!file || isVerifying || currentStep === 'complete') return;
-
-//       if (file.size > 10 * 1024 * 1024) {
-//         addAgentMessage('File size must be less than 10MB.');
-//         return;
-//       }
-
-//       const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-//       if (!validTypes.includes(file.type)) {
-//         addAgentMessage('Please upload a PDF or image file (JPG, PNG).');
-//         return;
-//       }
-
-//       // 🔥 Clear audio queue and stop any playing audio
-//       audioQueueRef.current = [];
-//       isPlayingRef.current = false;
-      
-//       // Stop current audio context
-//       if (audioContextRef.current) {
-//         try {
-//           await audioContextRef.current.suspend();
-//         } catch (err) {
-//           console.log('Could not suspend audio context:', err);
-//         }
-//       }
-
-//       addUserMessage(`Uploaded: ${file.name}`, file.name);
-//       addAgentMessage('Analyzing your document...');
-//       setIsVerifying(true);
-
+//     console.log('🔒 Disabling conversation for document verification');
+//     setConversationEnabled(false);
+//     stopAgentAudio();
+    
+//     audioQueueRef.current = [];
+//     isPlayingRef.current = false;
+    
+//     if (audioContextRef.current) {
 //       try {
-//         const base64 = await fileToBase64(file);
-        
-//         // 🔥 NEW: Call verification API with candidate name for name matching
-//         const verifyResponse = await fetch('/api/verify-document', {
-//           method: 'POST',
-//           headers: { 'Content-Type': 'application/json' },
-//           body: JSON.stringify({
-//             fileData: base64,
-//             fileName: file.name,
-//             fileType: file.type,
-//             documentType: currentStep,
-//             candidateName: candidateName, // 🔥 NEW: Send candidate name for verification
-//           }),
-//         });
+//         await audioContextRef.current.suspend();
+//       } catch (err) {
+//         console.log('Could not suspend audio context:', err);
+//       }
+//     }
 
-//         if (!verifyResponse.ok) throw new Error('Verification failed');
-//         const verificationResult = await verifyResponse.json();
+//     addUserMessage(`Uploaded: ${file.name}`, file.name);
+//     addAgentMessage('Analyzing your document...');
+//     setIsVerifying(true);
 
-//         // Resume audio context for voice agent response
-//         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-//           try {
-//             await audioContextRef.current.resume();
-//           } catch (err) {
-//             console.log('Could not resume audio context:', err);
-//           }
-//         }
-
-//         // 🔥 CRITICAL: Send verification result to voice agent IMMEDIATELY (success or failure)
-//         wsRef.current?.send(JSON.stringify({
-//           type: 'verification_result',
-//           documentType: currentStep,
+//     try {
+//       const base64 = await fileToBase64(file);
+      
+//       const verifyResponse = await fetch('/api/verify-document', {
+//         method: 'POST',
+//         headers: { 'Content-Type': 'application/json' },
+//         body: JSON.stringify({
+//           fileData: base64,
 //           fileName: file.name,
-//           recordId,
-//           verificationData: {
-//             confidence: verificationResult.confidence,
-//             extractedData: verificationResult.extractedData || {},
-//             aiAnalysis: verificationResult.aiAnalysis,
-//             isValid: verificationResult.isValid,
-//             issues: verificationResult.issues || [],
-//             nameMatch: verificationResult.nameMatch || false, // 🔥 NEW: Name match status
-//             extractedName: verificationResult.extractedName || '', // 🔥 NEW: Name found in document
-//           }
-//         }));
+//           fileType: file.type,
+//           documentType: currentStep,
+//           candidateName: candidateName,
+//         }),
+//       });
 
-//         // 🔥 NEW: Check for NAME MISMATCH first (highest priority)
-//         if (verificationResult.nameMatch === false) {
-//           let nameMismatchMessage = `❌ NAME VERIFICATION FAILED\n\n`;
-//           nameMismatchMessage += `**Expected Name:** ${candidateName}\n`;
-//           nameMismatchMessage += `**Name on Document:** ${verificationResult.extractedName || 'Not found'}\n\n`;
-//           nameMismatchMessage += `⚠️ **CRITICAL:** The name on the document does not match your registered name.\n\n`;
-          
-//           if (verificationResult.issues && verificationResult.issues.length > 0) {
-//             nameMismatchMessage += '**Issues:**\n';
-//             verificationResult.issues.forEach((issue: string) => {
-//               nameMismatchMessage += `• ${issue}\n`;
-//             });
-//           }
-          
-//           nameMismatchMessage += '\n**Please upload a document with YOUR name on it.**';
-//           addAgentMessage(nameMismatchMessage);
-          
-//           // Voice agent will explain the name mismatch
-//           return;
+//       if (!verifyResponse.ok) throw new Error('Verification failed');
+//       const verificationResult = await verifyResponse.json();
+
+//       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+//         try {
+//           await audioContextRef.current.resume();
+//         } catch (err) {
+//           console.log('Could not resume audio context:', err);
 //         }
+//       }
 
-//         // Check if verification FAILED (other reasons)
-//         if (!verificationResult.isValid || verificationResult.confidence < 0.7) {
-//           let failureMessage = `❌ Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
-//           failureMessage += `${verificationResult.aiAnalysis}\n\n`;
-          
-//           if (verificationResult.issues && verificationResult.issues.length > 0) {
-//             failureMessage += '**Issues found:**\n';
-//             verificationResult.issues.forEach((issue: string) => {
-//               failureMessage += `• ${issue}\n`;
-//             });
-//           }
-          
-//           failureMessage += '\n**The voice agent will explain what needs to be corrected.**';
-//           addAgentMessage(failureMessage);
-          
-//           return;
+//       console.log('🔓 Re-enabling conversation after verification');
+//       setConversationEnabled(true);
+
+//       wsRef.current?.send(JSON.stringify({
+//         type: 'verification_result',
+//         documentType: currentStep,
+//         fileName: file.name,
+//         recordId,
+//         verificationData: {
+//           confidence: verificationResult.confidence,
+//           extractedData: verificationResult.extractedData || {},
+//           aiAnalysis: verificationResult.aiAnalysis,
+//           isValid: verificationResult.isValid,
+//           issues: verificationResult.issues || [],
+//           nameMatch: verificationResult.nameMatch || false,
+//           extractedName: verificationResult.extractedName || '',
 //         }
+//       }));
 
-//         // ✅ Verification SUCCESS - Upload to Airtable
-//         const formData = new FormData();
-//         formData.append('file', file);
-//         formData.append('documentType', currentStep);
-//         formData.append('recordId', recordId);
-
-//         const uploadResponse = await fetch('/api/upload', {
-//           method: 'POST',
-//           body: formData
-//         });
-
-//         if (!uploadResponse.ok) {
-//           throw new Error('Failed to upload to Airtable');
-//         }
-
-//         // Show success message in UI
-//         let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
-//         successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`; // 🔥 NEW
-//         successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
+//       if (verificationResult.nameMatch === false) {
+//         let nameMismatchMessage = `❌ NAME VERIFICATION FAILED\n\n`;
+//         nameMismatchMessage += `**Expected Name:** ${candidateName}\n`;
+//         nameMismatchMessage += `**Name on Document:** ${verificationResult.extractedName || 'Not found'}\n\n`;
+//         nameMismatchMessage += `⚠️ **CRITICAL:** The name on the document does not match your registered name.\n\n`;
         
-//         if (Object.keys(verificationResult.extractedData).length > 0) {
-//           successMessage += '**Extracted Information:**\n';
-//           Object.entries(verificationResult.extractedData).forEach(([key, value]) => {
-//             if (value) {
-//               const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-//               successMessage += `• ${label}: ${value}\n`;
-//             }
+//         if (verificationResult.issues && verificationResult.issues.length > 0) {
+//           nameMismatchMessage += '**Issues:**\n';
+//           verificationResult.issues.forEach((issue: string) => {
+//             nameMismatchMessage += `• ${issue}\n`;
 //           });
 //         }
-
-//         successMessage += '\n**The voice agent will guide you to the next step.**';
-//         addAgentMessage(successMessage);
-
-//       } catch (err) {
-//         addAgentMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
         
-//         if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
-//           try {
-//             await audioContextRef.current.resume();
-//           } catch (resumeErr) {
-//             console.log('Could not resume audio context:', resumeErr);
-//           }
+//         nameMismatchMessage += '\n**Please upload a document with YOUR name on it.**';
+//         addAgentMessage(nameMismatchMessage);
+        
+//         return;
+//       }
+
+//       if (!verificationResult.isValid || verificationResult.confidence < 0.7) {
+//         let failureMessage = `❌ Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
+//         failureMessage += `${verificationResult.aiAnalysis}\n\n`;
+        
+//         if (verificationResult.issues && verificationResult.issues.length > 0) {
+//           failureMessage += '**Issues found:**\n';
+//           verificationResult.issues.forEach((issue: string) => {
+//             failureMessage += `• ${issue}\n`;
+//           });
 //         }
         
-//         wsRef.current?.send(JSON.stringify({
-//           type: 'verification_result',
-//           documentType: currentStep,
-//           fileName: file.name,
-//           recordId,
-//           verificationData: {
-//             confidence: 0,
-//             extractedData: {},
-//             aiAnalysis: `Error during verification: ${err instanceof Error ? err.message : 'Unknown error'}`,
-//             isValid: false,
-//             issues: ['Technical error occurred during verification'],
-//             nameMatch: false,
-//             extractedName: ''
-//           }
-//         }));
-//       } finally {
-//         setIsVerifying(false);
-//         if (fileInputRef.current) fileInputRef.current.value = '';
+//         failureMessage += '\n**The voice agent will explain what needs to be corrected.**';
+//         addAgentMessage(failureMessage);
+        
+//         return;
 //       }
-//     };
-//   // const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-//   //   const file = e.target.files?.[0];
-//   //   if (!file || isVerifying || currentStep === 'complete') return;
 
-//   //   if (file.size > 10 * 1024 * 1024) {
-//   //     addAgentMessage('File size must be less than 10MB.');
-//   //     return;
-//   //   }
+//       const formData = new FormData();
+//       formData.append('file', file);
+//       formData.append('documentType', currentStep);
+//       formData.append('recordId', recordId);
 
-//   //   const validTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
-//   //   if (!validTypes.includes(file.type)) {
-//   //     addAgentMessage('Please upload a PDF or image file (JPG, PNG).');
-//   //     return;
-//   //   }
+//       const uploadResponse = await fetch('/api/upload', {
+//         method: 'POST',
+//         body: formData
+//       });
 
-//   //   addUserMessage(`Uploaded: ${file.name}`, file.name);
-//   //   addAgentMessage('Analyzing your document...');
-//   //   setIsVerifying(true);
+//       if (!uploadResponse.ok) {
+//         throw new Error('Failed to upload to Airtable');
+//       }
 
-//   //   try {
-//   //     const base64 = await fileToBase64(file);
-//   //     const verifyResponse = await fetch('/api/verify-document', {
-//   //       method: 'POST',
-//   //       headers: { 'Content-Type': 'application/json' },
-//   //       body: JSON.stringify({
-//   //         fileData: base64,
-//   //         fileName: file.name,
-//   //         fileType: file.type,
-//   //         documentType: currentStep,
-//   //       }),
-//   //     });
-
-//   //     if (!verifyResponse.ok) throw new Error('Verification failed');
-//   //     const verificationResult = await verifyResponse.json();
-
-//   //     if (!verificationResult.isValid || verificationResult.confidence < 0.7) {
-//   //       addAgentMessage(`Verification failed. ${verificationResult.aiAnalysis}\nPlease upload a clearer document.`);
-//   //       return;
-//   //     }
-
-//   //     // const formData = new FormData();
-//   //     // formData.append('file', file);
-//   //     // formData.append('documentType', currentStep);
-//   //     // formData.append('recordId', recordId);
-
-//   //     // const uploadResponse = await fetch('/api/upload', {
-//   //     //   method: 'POST',
-//   //     //   body: formData,
-//   //     // });
-
-//   //     // if (!uploadResponse.ok) throw new Error('Upload failed');
-//   //     const formData = new FormData();
-//   //     formData.append('file', file);
-//   //     formData.append('documentType', currentStep);
-//   //     formData.append('recordId', recordId);
-
-//   //     const uploadResponse = await fetch('/api/upload', {
-//   //       method: 'POST',
-//   //       body: formData
-//   //     });
-
-//   //     if (!uploadResponse.ok) {
-//   //       throw new Error('Failed to upload to Airtable');
-//   //     }
-
-//   //     // Success message
-//   //     let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
-//   //     successMessage += `**AI Analysis:**\n${verificationResult.aiAnalysis}\n\n`;
-//   //     successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%`;
+//       let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
+//       successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`;
+//       successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
       
-//   //     if (Object.keys(verificationResult.extractedData).length > 0) {
-//   //       successMessage += '\n\n**Extracted Information:**\n';
-//   //       Object.entries(verificationResult.extractedData).forEach(([key, value]) => {
-//   //         if (value) {
-//   //           const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-//   //           successMessage += `• ${label}: ${value}\n`;
-//   //         }
-//   //       });
-//   //     }
+//       if (Object.keys(verificationResult.extractedData).length > 0) {
+//         successMessage += '**Extracted Information:**\n';
+//         Object.entries(verificationResult.extractedData).forEach(([key, value]) => {
+//           if (value) {
+//             const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+//             successMessage += `• ${label}: ${value}\n`;
+//           }
+//         });
+//       }
 
-//   //     addAgentMessage(`${getDocumentLabel(currentStep)} verified! Confidence: ${(verificationResult.confidence * 100).toFixed(0)}%`);
+//       successMessage += '\n**The voice agent will guide you to the next step.**';
+//       addAgentMessage(successMessage);
 
-//   //     wsRef.current?.send(JSON.stringify({
-//   //       type: 'file_verified',
-//   //       documentType: currentStep,
-//   //       fileName: file.name,
-//   //       recordId,
-//   //     }));
-
-//   //   } catch (err) {
-//   //     addAgentMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-//   //   } finally {
-//   //     setIsVerifying(false);
-//   //     if (fileInputRef.current) fileInputRef.current.value = '';
-//   //   }
-//   // };
+//     } catch (err) {
+//       addAgentMessage(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      
+//       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+//         try {
+//           await audioContextRef.current.resume();
+//         } catch (resumeErr) {
+//           console.log('Could not resume audio context:', resumeErr);
+//         }
+//       }
+      
+//       setConversationEnabled(true);
+      
+//       wsRef.current?.send(JSON.stringify({
+//         type: 'verification_result',
+//         documentType: currentStep,
+//         fileName: file.name,
+//         recordId,
+//         verificationData: {
+//           confidence: 0,
+//           extractedData: {},
+//           aiAnalysis: `Error during verification: ${err instanceof Error ? err.message : 'Unknown error'}`,
+//           isValid: false,
+//           issues: ['Technical error occurred during verification'],
+//           nameMatch: false,
+//           extractedName: ''
+//         }
+//       }));
+//     } finally {
+//       setIsVerifying(false);
+//       if (fileInputRef.current) fileInputRef.current.value = '';
+//     }
+//   };
 
 //   const fileToBase64 = (file: File): Promise<string> => {
 //     return new Promise((resolve, reject) => {
@@ -627,7 +564,6 @@
 //     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px', fontFamily: 'system-ui' }}>
 //       <div style={{ maxWidth: '800px', margin: '0 auto', height: '85vh', background: 'white', borderRadius: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
-//         {/* Header with voice indicator */}
 //         <div style={{ padding: '24px', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white' }}>
 //           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
 //             <div>
@@ -637,27 +573,25 @@
 //               </p>
 //             </div>
             
-//             {/* Voice Activity Indicator */}
 //             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
 //               <div style={{
 //                 width: '60px',
 //                 height: '60px',
 //                 borderRadius: '50%',
-//                 background: isSpeaking ? '#10b981' : '#ef4444',
+//                 background: !conversationEnabled ? '#9ca3af' : (agentIsSpeaking ? '#ef4444' : (isSpeaking ? '#10b981' : '#6b7280')),
 //                 display: 'flex',
 //                 alignItems: 'center',
 //                 justifyContent: 'center',
 //                 fontSize: '24px',
 //                 transition: 'all 0.2s ease',
-//                 boxShadow: isSpeaking ? '0 0 20px rgba(16, 185, 129, 0.8)' : '0 0 10px rgba(239, 68, 68, 0.5)',
-//                 animation: isSpeaking ? 'pulse 1.5s infinite' : 'none'
+//                 boxShadow: !conversationEnabled ? 'none' : (agentIsSpeaking ? '0 0 20px rgba(239, 68, 68, 0.8)' : (isSpeaking ? '0 0 20px rgba(16, 185, 129, 0.8)' : '0 0 10px rgba(107, 114, 128, 0.5)')),
+//                 animation: (isSpeaking || agentIsSpeaking) ? 'pulse 1.5s infinite' : 'none'
 //               }}>
-//                 {isSpeaking ? '🎤' : '🔇'}
+//                 {!conversationEnabled ? '⏸️' : (agentIsSpeaking ? '🤖' : (isSpeaking ? '🎤' : '👤'))}
 //               </div>
 //               <div style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9 }}>
-//                 {isSpeaking ? 'LISTENING' : 'SILENT'}
+//                 {!conversationEnabled ? 'PAUSED' : (agentIsSpeaking ? 'AGENT SPEAKING' : (isSpeaking ? 'YOU SPEAKING' : 'READY'))}
 //               </div>
-//               {/* Audio level bar */}
 //               <div style={{ 
 //                 width: '60px', 
 //                 height: '4px', 
@@ -668,7 +602,7 @@
 //                 <div style={{
 //                   height: '100%',
 //                   width: `${Math.min((audioLevel / 100) * 100, 100)}%`,
-//                   background: isSpeaking ? '#10b981' : '#ef4444',
+//                   background: !conversationEnabled ? '#9ca3af' : (agentIsSpeaking ? '#ef4444' : (isSpeaking ? '#10b981' : '#6b7280')),
 //                   transition: 'width 0.1s ease'
 //                 }} />
 //               </div>
@@ -676,11 +610,11 @@
 //           </div>
           
 //           <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
-//             Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+//             Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'} 
+//             {isVerifying && ' | 📄 Verifying Document...'}
 //           </div>
 //         </div>
 
-//         {/* Messages */}
 //         <div style={{ flex: 1, overflowY: 'auto', padding: '24px', background: '#f9fafb' }}>
 //           {messages.map((message) => (
 //             <div key={message.id} style={{ marginBottom: '16px', display: 'flex', justifyContent: message.type === 'agent' ? 'flex-start' : 'flex-end' }}>
@@ -727,7 +661,6 @@
 //           <div ref={messagesEndRef} />
 //         </div>
 
-//         {/* Upload button */}
 //         {currentStep !== 'complete' && (
 //           <div style={{ padding: '24px', background: 'white', borderTop: '1px solid #e5e7eb' }}>
 //             <input
@@ -840,8 +773,66 @@
 //   }
 // };
 
+
+
+
+
+
+
+
+
+
+
+
+
 import { useState, useEffect, useRef } from 'react';
 import { GetServerSideProps } from 'next';
+
+// --- SVG Icons ---
+
+const IconUser = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A1.5 1.5 0 0118 21.75H6a1.5 1.5 0 01-1.499-1.632z" />
+  </svg>
+);
+
+const IconMic = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15a3 3 0 01-3-3V4.5a3 3 0 016 0v7.5a3 3 0 01-3 3z" />
+  </svg>
+);
+
+const IconAgent = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17.25v1.007a3 3 0 01-.375.375H6.75A2.25 2.25 0 014.5 16.5V6.75A2.25 2.25 0 016.75 4.5h10.5A2.25 2.25 0 0119.5 6.75v9.75c0 .993-.806 1.798-1.798 1.798H14.25a3 3 0 01-.375-.375v-1.007M9 17.25h6M6 13.5h3.75M6 10.5h3.75M6 7.5h3.75M13.5 13.5h3.75M13.5 10.5h3.75M13.5 7.5h3.75" />
+  </svg>
+);
+
+const IconPause = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="24" height="24" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25v13.5m-7.5-13.5v13.5" />
+  </svg>
+);
+
+const IconFile = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16" strokeWidth={2} style={{ marginRight: '8px', verticalAlign: 'middle' }}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 01-2.122-2.122l7.81-7.81c.19-.19.44-.29.7-.29a.996.996 0 01.7.29l2.122 2.122c.19.19.29.44.29.7s-.1.51-.29.7z" />
+  </svg>
+);
+
+const IconCheck = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="80" height="80" strokeWidth={3} style={{ color: '#10b981', marginBottom: '20px' }}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+  </svg>
+);
+
+const IconWarning = () => (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="60" height="60" strokeWidth={1.5} style={{ color: '#ef4444', marginBottom: '20px' }}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+  </svg>
+);
+
+// --- Component ---
 
 interface Message {
   id: string;
@@ -886,11 +877,11 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
   
   useEffect(() => {
     if (error) {
-      addAgentMessage(`❌ Error: ${error}`);
+      addAgentMessage(`Error: ${error}`);
       return;
     }
     addAgentMessage(
-      `👋 Hello, ${candidateName}! I'm your AI onboarding assistant. Let's verify your documents.\n\nPlease upload your **Identity Proof** in Image format (PNG, JPG) (Driver's License, Passport, or Government ID).`
+      `Hello, ${candidateName}! I'm your AI onboarding assistant. Let's verify your documents.\n\nPlease upload your **Identity Proof** in Image format (PNG, JPG) (Driver's License, Passport, or Government ID).`
     );
   }, [candidateName, error]);
 
@@ -1267,10 +1258,10 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       }));
 
       if (verificationResult.nameMatch === false) {
-        let nameMismatchMessage = `❌ NAME VERIFICATION FAILED\n\n`;
+        let nameMismatchMessage = `NAME VERIFICATION FAILED\n\n`;
         nameMismatchMessage += `**Expected Name:** ${candidateName}\n`;
         nameMismatchMessage += `**Name on Document:** ${verificationResult.extractedName || 'Not found'}\n\n`;
-        nameMismatchMessage += `⚠️ **CRITICAL:** The name on the document does not match your registered name.\n\n`;
+        nameMismatchMessage += `CRITICAL: The name on the document does not match your registered name.\n\n`;
         
         if (verificationResult.issues && verificationResult.issues.length > 0) {
           nameMismatchMessage += '**Issues:**\n';
@@ -1286,7 +1277,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       }
 
       if (!verificationResult.isValid || verificationResult.confidence < 0.7) {
-        let failureMessage = `❌ Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
+        let failureMessage = `Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
         failureMessage += `${verificationResult.aiAnalysis}\n\n`;
         
         if (verificationResult.issues && verificationResult.issues.length > 0) {
@@ -1316,8 +1307,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
         throw new Error('Failed to upload to Airtable');
       }
 
-      let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
-      successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`;
+      let successMessage = `${getDocumentLabel(currentStep)} verified successfully!\n\n`;
+      successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName}\n`;
       successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
       
       if (Object.keys(verificationResult.extractedData).length > 0) {
@@ -1389,23 +1380,54 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     scrollToBottom();
   }, [messages]);
 
+  const StatusIcon = () => {
+    let icon;
+    let color;
+    let shadowColor;
+    let label;
+
+    if (!conversationEnabled) {
+      icon = <IconPause />;
+      color = '#9ca3af'; // Gray
+      label = 'PAUSED';
+    } else if (agentIsSpeaking) {
+      icon = <IconAgent />;
+      color = '#2563eb'; // Blue
+      shadowColor = 'rgba(37, 99, 235, 0.6)';
+      label = 'AGENT SPEAKING';
+    } else if (isSpeaking) {
+      icon = <IconMic />;
+      color = '#10b981'; // Green
+      shadowColor = 'rgba(16, 185, 129, 0.6)';
+      label = 'YOU SPEAKING';
+    } else {
+      icon = <IconUser />;
+      color = '#6b7280'; // Dark Gray
+      label = 'READY';
+    }
+
+    return { icon, color, shadowColor, label };
+  };
+
+  const { icon, color, shadowColor, label } = StatusIcon();
+
   if (error) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center' }}>
-          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚠</div>
-          <h2>Error</h2>
-          <p>{error}</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f1f5f9' }}>
+        <div style={{ background: 'white', padding: '40px', borderRadius: '16px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.1)' }}>
+          <IconWarning />
+          <h2 style={{ color: '#1f2937' }}>Error</h2>
+          <p style={{ color: '#6b7280' }}>{error}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: '20px', fontFamily: 'system-ui' }}>
-      <div style={{ maxWidth: '800px', margin: '0 auto', height: '85vh', background: 'white', borderRadius: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ minHeight: '100vh', background: '#f1f5f9', padding: '20px', fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif' }}>
+      <div style={{ maxWidth: '800px', margin: '0 auto', height: '85vh', background: 'white', borderRadius: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.1)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         
-        <div style={{ padding: '24px', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white' }}>
+        <div style={{ padding: '24px', background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: 'white' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700' }}>AI Voice Document Assistant</h1>
@@ -1419,19 +1441,20 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 width: '60px',
                 height: '60px',
                 borderRadius: '50%',
-                background: !conversationEnabled ? '#9ca3af' : (agentIsSpeaking ? '#ef4444' : (isSpeaking ? '#10b981' : '#6b7280')),
+                background: color,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: '24px',
+                color: 'white',
                 transition: 'all 0.2s ease',
-                boxShadow: !conversationEnabled ? 'none' : (agentIsSpeaking ? '0 0 20px rgba(239, 68, 68, 0.8)' : (isSpeaking ? '0 0 20px rgba(16, 185, 129, 0.8)' : '0 0 10px rgba(107, 114, 128, 0.5)')),
+                boxShadow: shadowColor ? `0 0 20px ${shadowColor}` : '0 0 10px rgba(107, 114, 128, 0.5)',
                 animation: (isSpeaking || agentIsSpeaking) ? 'pulse 1.5s infinite' : 'none'
               }}>
-                {!conversationEnabled ? '⏸️' : (agentIsSpeaking ? '🤖' : (isSpeaking ? '🎤' : '👤'))}
+                {icon}
               </div>
               <div style={{ fontSize: '11px', fontWeight: '600', opacity: 0.9 }}>
-                {!conversationEnabled ? 'PAUSED' : (agentIsSpeaking ? 'AGENT SPEAKING' : (isSpeaking ? 'YOU SPEAKING' : 'READY'))}
+                {label}
               </div>
               <div style={{ 
                 width: '60px', 
@@ -1443,16 +1466,24 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 <div style={{
                   height: '100%',
                   width: `${Math.min((audioLevel / 100) * 100, 100)}%`,
-                  background: !conversationEnabled ? '#9ca3af' : (agentIsSpeaking ? '#ef4444' : (isSpeaking ? '#10b981' : '#6b7280')),
+                  background: color,
                   transition: 'width 0.1s ease'
                 }} />
               </div>
             </div>
           </div>
           
-          <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8 }}>
-            Status: {isConnected ? '🟢 Connected' : '🔴 Disconnected'} 
-            {isVerifying && ' | 📄 Verifying Document...'}
+          <div style={{ marginTop: '12px', fontSize: '12px', opacity: 0.8, display: 'flex', alignItems: 'center' }}>
+            Status: 
+            <span style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              background: isConnected ? '#10b981' : '#ef4444', 
+              margin: '0 6px' 
+            }} />
+            {isConnected ? 'Connected' : 'Disconnected'} 
+            {isVerifying && ' | Verifying Document...'}
           </div>
         </div>
 
@@ -1460,20 +1491,21 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
           {messages.map((message) => (
             <div key={message.id} style={{ marginBottom: '16px', display: 'flex', justifyContent: message.type === 'agent' ? 'flex-start' : 'flex-end' }}>
               <div style={{
-                background: message.type === 'agent' ? 'white' : 'linear-gradient(135deg, #667eea, #764ba2)',
+                background: message.type === 'agent' ? 'white' : '#2563eb',
                 color: message.type === 'agent' ? '#1f2937' : 'white',
                 padding: '14px 18px',
                 borderRadius: message.type === 'agent' ? '0 16px 16px 16px' : '16px 0 16px 16px',
                 maxWidth: '75%',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                border: message.type === 'agent' ? '1px solid #e2e8f0' : 'none',
                 whiteSpace: 'pre-wrap',
                 fontSize: '14px',
                 lineHeight: '1.6'
               }}>
                 {message.content}
                 {message.fileName && (
-                  <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(0,0,0,0.1)', borderRadius: '8px', fontSize: '12px' }}>
-                    📎 {message.fileName}
+                  <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(255,255,255,0.15)', borderRadius: '8px', fontSize: '12px', display: 'flex', alignItems: 'center' }}>
+                    <IconFile /> {message.fileName}
                   </div>
                 )}
               </div>
@@ -1488,7 +1520,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
                 padding: '14px 18px',
                 borderRadius: '0 16px 16px 16px',
                 maxWidth: '75%',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                border: '1px solid #e2e8f0',
                 fontSize: '14px',
                 lineHeight: '1.6',
                 opacity: 0.7
@@ -1518,8 +1551,8 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
               style={{
                 width: '100%',
                 padding: '16px',
-                background: (isVerifying || !isConnected) ? '#e5e7eb' : 'linear-gradient(135deg, #667eea, #764ba2)',
-                color: 'white',
+                background: (isVerifying || !isConnected) ? '#e5e7eb' : '#2563eb',
+                color: (isVerifying || !isConnected) ? '#9ca3af' : 'white',
                 border: 'none',
                 borderRadius: '12px',
                 fontSize: '15px',
@@ -1551,7 +1584,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       {showCompletionPopup && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: '20px', padding: '50px 40px', maxWidth: '450px', textAlign: 'center', boxShadow: '0 25px 70px rgba(0,0,0,0.4)' }}>
-            <div style={{ fontSize: '70px', marginBottom: '20px' }}>✅</div>
+            <IconCheck />
             <h2 style={{ margin: '0 0 15px', color: '#1f2937', fontSize: '28px', fontWeight: '700' }}>
               All Documents Verified!
             </h2>
@@ -1560,7 +1593,7 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
             </p>
             <button
               onClick={() => setShowCompletionPopup(false)}
-              style={{ padding: '14px 40px', background: 'linear-gradient(135deg, #667eea, #764ba2)', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
+              style={{ padding: '14px 40px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}
             >
               Done
             </button>
