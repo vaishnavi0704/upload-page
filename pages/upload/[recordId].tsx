@@ -833,7 +833,31 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
       return;
     }
     addAgentMessage(
-      `👋 Hello, ${candidateName}! I'm your AI onboarding assistant. Let's verify your documents.\n\nPlease upload your **Identity Proof** in Image format (PNG, JPG) (Driver's License, Passport, or Government ID).`
+      `Hello, ${candidateName}.
+ 
+Welcome to the new Journey with new Role at this New Place.
+I am your AI onboarding assistant, and I will help you get started with your first week here.
+ 
+In this short session, I will do three things for you:
+Welcome you and give you a quick overview of your first week’s schedule,
+Explain the key meetings you will attend, and
+Guide you through your document verification.
+Let me begin with your upcoming schedule and meetings for the first week.
+On Day 1, you will have your Welcome and HR Orientation session.
+In this meeting, you will:
+Learn about the company, our values, and work culture,
+Understand important HR policies.
+Next, you will have a Team and Manager Introduction session, where
+Meet your core team, and
+Get an overview of your role, the projects you’ll work on, and how your work contributes to the team.
+ 
+Towards the end of the week, you will have a First Week Check-in with HR and your manager.
+This is a short session to:
+See how comfortable you are with the role and environment,
+Clarify any questions, and
+All these meetings will be shared with you via calendar invites and email, including links, timings, and participants.
+Now that you have an overview of your first week, let us complete your document verification.
+ `
     );
   }, [candidateName, error]);
 
@@ -1604,7 +1628,15 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
               All Documents Verified!
             </h2>
             <p style={{ color: '#6b7280', marginBottom: '35px', fontSize: '15px' }}>
-              Your preboarding is complete. HR will contact you within 24 hours.
+              Our initial onboarding steps are now complete.
+Today, we have:
+Given you an overview of your first week’s schedule and key meetings, and
+Collected your Identity Proof for verification.
+As next steps, please:
+Check your email and calendar for your meeting invites,
+Review any documents or links shared by HR
+If at any point you are unsure about your schedule, you can return to this assistant and ask for your first-week schedule again, or you can refer to your onboarding email.
+Thank you for your time and I wish you a great time with your wonderful team.
             </p>
             <button
               onClick={() => setShowCompletionPopup(false)}
