@@ -1039,7 +1039,7 @@ Now that you have an overview of your first week, let us complete your document 
       
       setAudioLevel(average);
       
-      const voiceThreshold = 40;
+      const voiceThreshold = 60;
       const isSpeakingNow = average > voiceThreshold && conversationEnabled && !agentIsSpeaking;
       
       // Add to rolling buffer (last 10 frames)
