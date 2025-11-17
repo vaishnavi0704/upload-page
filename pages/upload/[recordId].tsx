@@ -135,6 +135,39 @@ Now that you have an overview of your first week, let us complete your document 
           candidateName,
           recordId,
         }));
+              // NEW: Send initial greeting prompt
+      setTimeout(() => {
+        wsRef.current?.send(JSON.stringify({
+          type: 'initial_greeting',
+          candidateName: candidateName,
+          message: `You are an AI onboarding assistant helping ${candidateName} with their first week at the company. 
+
+Deliver the following welcome message in a warm, professional, and conversational tone. Speak naturally with appropriate pauses:
+
+"Hello ${candidateName}.
+
+Welcome to your new journey with your new role at this new place. I am your AI onboarding assistant, and I will help you get started with your first week here.
+
+In this short session, I will do three things for you:
+First, welcome you and give you a quick overview of your first week's schedule.
+Second, explain the key meetings you will attend.
+And third, guide you through your document verification.
+
+Let me begin with your upcoming schedule and meetings for the first week.
+
+On Day 1, you will have your Welcome and HR Orientation session. In this meeting, you will learn about the company, our values, and work culture, as well as understand important HR policies.
+
+Next, you will have a Team and Manager Introduction session, where you'll meet your core team and get an overview of your role, the projects you'll work on, and how your work contributes to the team.
+
+Towards the end of the week, you will have a First Week Check-in with HR and your manager. This is a short session to see how comfortable you are with the role and environment, and to clarify any questions.
+
+All these meetings will be shared with you via calendar invites and email, including links, timings, and participants.
+
+Now that you have an overview of your first week, let us complete your document verification. Please upload your identity proof when you're ready."`
+        }));
+      }, 500); // Small delay to ensure connection is stable
+    };
+
       };
 
       wsRef.current.onmessage = (event) => {
