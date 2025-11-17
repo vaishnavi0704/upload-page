@@ -168,7 +168,7 @@ Now that you have an overview of your first week, let us complete your document 
       }, 500); // Small delay to ensure connection is stable
     };
 
-      };
+    
 
       wsRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
