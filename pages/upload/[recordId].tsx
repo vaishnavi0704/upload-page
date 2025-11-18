@@ -1024,7 +1024,20 @@ export default function DocumentUploadChatbot({ candidateName, recordId, error }
     
     // Display welcome message in UI
     addAgentMessage(
-      `Hello, ${candidateName}.\n\nWelcome to your new journey with your new role at this new place.\nI am your AI onboarding assistant, and I will help you get started with your first week here.\n\nIn this short session, I will do three things for you:\n• Welcome you and give you a quick overview of your first week's schedule\n• Explain the key meetings you will attend\n• Guide you through your document verification\n\nLet me begin with your upcoming schedule and meetings for the first week...`
+      `Hello, ${candidateName}.
+
+Welcome to your new journey with your new role at this new place.
+I am your AI onboarding assistant, and I will help you get started with your first week here.
+
+In this short session, I will do three things for you:
+• Welcome you and give you a quick overview of your first week's schedule  
+• Explain the key meetings you will attend  
+• Guide you through your document verification  
+
+During your first week, you will have an Orientation Session to understand the company, an HR Session to review policies and procedures, and a Manager Session where you will receive clarity on your role and responsibilities.
+
+Let me begin with your upcoming schedule and meetings for the first week...
+`
     );
   }, [candidateName, error]);
 
