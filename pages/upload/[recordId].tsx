@@ -1,4 +1,3 @@
-
 // import { useState, useEffect, useRef } from 'react';
 // import { GetServerSideProps } from 'next';
 
@@ -42,16 +41,14 @@
 //   const animationFrameRef = useRef<number | null>(null);
 //   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   
-//   // NEW: Accumulate ALL audio chunks before playing
 //   const allAudioChunksRef = useRef<Float32Array[]>([]);
 //   const isReceivingAudioRef = useRef<boolean>(false);
 //   const audioCompleteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-//   // NEW: Voice Activity Detection for sentence-level interruption
 //   const voiceActivityBufferRef = useRef<number[]>([]);
 //   const isSpeakingContinuouslyRef = useRef<boolean>(false);
 //   const speechStartTimeRef = useRef<number>(0);
-//   const MIN_SPEECH_DURATION_MS = 6000; // Only interrupt after 1.5 seconds of continuous speech
+//   const MIN_SPEECH_DURATION_MS = 6000;
 
   
 //   useEffect(() => {
@@ -59,33 +56,23 @@
 //       addAgentMessage(`❌ Error: ${error}`);
 //       return;
 //     }
-//       // Send initial greeting prompt to the agent via WebSocket
+    
+//     // Display welcome message in UI
 //     addAgentMessage(
 //       `Hello, ${candidateName}.
- 
-// Welcome to the new Journey with new Role at this New Place.
+
+// Welcome to your new journey with your new role at this new place.
 // I am your AI onboarding assistant, and I will help you get started with your first week here.
- 
+
 // In this short session, I will do three things for you:
-// Welcome you and give you a quick overview of your first week’s schedule,
-// Explain the key meetings you will attend, and
-// Guide you through your document verification.
-// Let me begin with your upcoming schedule and meetings for the first week.
-// On Day 1, you will have your Welcome and HR Orientation session.
-// In this meeting, you will:
-// Learn about the company, our values, and work culture,
-// Understand important HR policies.
-// Next, you will have a Team and Manager Introduction session, where
-// Meet your core team, and
-// Get an overview of your role, the projects you’ll work on, and how your work contributes to the team.
- 
-// Towards the end of the week, you will have a First Week Check-in with HR and your manager.
-// This is a short session to:
-// See how comfortable you are with the role and environment,
-// Clarify any questions, and
-// All these meetings will be shared with you via calendar invites and email, including links, timings, and participants.
-// Now that you have an overview of your first week, let us complete your document verification.
-//  `
+// • Welcome you and give you a quick overview of your first week's schedule  
+// • Explain the key meetings you will attend  
+// • Guide you through your document verification  
+
+// During your first week, you will have an Orientation Session to understand the company, an HR Session to review policies and procedures, and a Manager Session where you will receive clarity on your role and responsibilities.
+
+// Let me begin with your upcoming schedule and meetings for the first week...
+// `
 //     );
 //   }, [candidateName, error]);
 
@@ -97,21 +84,13 @@
 //       wsRef.current.onopen = () => {
 //         console.log('✅ WebSocket connected');
 //         setIsConnected(true);
-//         wsRef.current?.send(JSON.stringify({  
+        
+//         // Send start message with initial greeting
+//         wsRef.current?.send(JSON.stringify({
 //           type: 'start',
 //           candidateName,
 //           recordId,
-//         }));
-//               // NEW: Send initial greeting prompt
-//       setTimeout(() => {
-//         wsRef.current?.send(JSON.stringify({
-//           type: 'initial_greeting',
-//           candidateName: candidateName,
-//           message: `You are an AI onboarding assistant helping ${candidateName} with their first week at the company. 
-
-// Deliver the following welcome message in a warm, professional, and conversational tone. Speak naturally with appropriate pauses:
-
-// "Hello ${candidateName}.
+//           initialMessage: `Hello ${candidateName}.
 
 // Welcome to your new journey with your new role at this new place. I am your AI onboarding assistant, and I will help you get started with your first week here.
 
@@ -130,12 +109,9 @@
 
 // All these meetings will be shared with you via calendar invites and email, including links, timings, and participants.
 
-// Now that you have an overview of your first week, let us complete your document verification. Please upload your identity proof when you're ready."`
+// Now that you have an overview of your first week, let us complete your document verification. Please upload your identity proof when you're ready.`
 //         }));
-//       }, 500); // Small delay to ensure connection is stable
-//     };
-
-    
+//       };
 
 //       wsRef.current.onmessage = (event) => {
 //         const data = JSON.parse(event.data);
@@ -151,28 +127,22 @@
 //         } else if (data.type === 'agent_transcript_done') {
 //           addAgentMessage(data.text);
 //           setCurrentAgentMessage('');
-//           // Don't immediately set agentIsSpeaking to false - wait for audio to finish
 //         } else if (data.type === 'audio_delta') {
-//           // Accumulate audio chunks - DON'T play yet
 //           isReceivingAudioRef.current = true;
 //           setAgentIsSpeaking(true);
           
-//           // Clear the completion timeout
 //           if (audioCompleteTimeoutRef.current) {
 //             clearTimeout(audioCompleteTimeoutRef.current);
 //           }
           
-//           // Store the chunk
 //           storeAudioChunk(data.delta);
           
-//           // Set timeout to detect when streaming is complete (300ms of no new data)
 //           audioCompleteTimeoutRef.current = setTimeout(() => {
 //             console.log('🎵 Audio streaming complete - playing accumulated audio');
 //             playAccumulatedAudio();
 //           }, 300);
           
 //         } else if (data.type === 'audio_complete') {
-//           // Server explicitly says audio is complete
 //           if (audioCompleteTimeoutRef.current) {
 //             clearTimeout(audioCompleteTimeoutRef.current);
 //           }
@@ -303,31 +273,25 @@
 //       const voiceThreshold = 60;
 //       const isSpeakingNow = average > voiceThreshold && conversationEnabled && !agentIsSpeaking;
       
-//       // Add to rolling buffer (last 10 frames)
 //       voiceActivityBufferRef.current.push(isSpeakingNow ? 1 : 0);
 //       if (voiceActivityBufferRef.current.length > 10) {
 //         voiceActivityBufferRef.current.shift();
 //       }
       
-//       // Check if consistently speaking (7 out of 10 frames)
 //       const speakingFrames = voiceActivityBufferRef.current.reduce((a, b) => a + b, 0);
 //       const isConsistentlySpeaking = speakingFrames >= 9;
       
-//       // Track continuous speech duration
 //       if (isConsistentlySpeaking && !isSpeakingContinuouslyRef.current) {
-//         // Started speaking continuously
 //         isSpeakingContinuouslyRef.current = true;
 //         speechStartTimeRef.current = Date.now();
 //         setIsSpeaking(true);
 //         console.log('🎤 User started speaking continuously');
 //       } else if (!isConsistentlySpeaking && isSpeakingContinuouslyRef.current) {
-//         // Stopped speaking
 //         isSpeakingContinuouslyRef.current = false;
 //         setIsSpeaking(false);
 //         console.log('🔇 User stopped speaking');
 //       }
       
-//       // Only interrupt agent if user has been speaking for MIN_SPEECH_DURATION_MS
 //       if (isSpeakingContinuouslyRef.current) {
 //         const speechDuration = Date.now() - speechStartTimeRef.current;
         
@@ -366,7 +330,6 @@
 //     return btoa(binary);
 //   };
 
-//   // NEW: Store audio chunk without playing
 //   const storeAudioChunk = (base64Delta: string) => {
 //     try {
 //       const binaryString = atob(base64Delta);
@@ -381,7 +344,6 @@
 //         float32[i] = pcm16[i] / (pcm16[i] < 0 ? 0x8000 : 0x7FFF);
 //       }
 
-//       // Just store it - don't play yet
 //       allAudioChunksRef.current.push(float32);
 //       console.log(`🎵 Stored chunk ${allAudioChunksRef.current.length}, size: ${float32.length}`);
 //     } catch (err) {
@@ -389,7 +351,6 @@
 //     }
 //   };
 
-//   // NEW: Play all accumulated audio at once
 //   const playAccumulatedAudio = () => {
 //     if (!audioContextRef.current || allAudioChunksRef.current.length === 0) {
 //       console.log('⚠️ No audio to play');
@@ -398,7 +359,6 @@
 //       return;
 //     }
 
-//     // Stop any currently playing audio to prevent overlap
 //     if (currentAudioSourceRef.current) {
 //       try {
 //         currentAudioSourceRef.current.stop();
@@ -413,7 +373,6 @@
 //     try {
 //       console.log(`🎵 Playing ${allAudioChunksRef.current.length} accumulated chunks`);
       
-//       // Combine ALL chunks into one complete audio buffer
 //       const totalLength = allAudioChunksRef.current.reduce((sum, chunk) => sum + chunk.length, 0);
 //       const combinedAudio = new Float32Array(totalLength);
       
@@ -423,16 +382,13 @@
 //         offset += chunk.length;
 //       }
       
-//       // Clear the accumulated chunks
 //       allAudioChunksRef.current = [];
       
-//       // Create one complete audio buffer
 //       const audioBuffer = audioContextRef.current.createBuffer(1, combinedAudio.length, 24000);
 //       audioBuffer.getChannelData(0).set(combinedAudio);
       
 //       console.log(`🎵 Created complete audio buffer: ${audioBuffer.duration.toFixed(2)}s`);
       
-//       // Play it immediately
 //       const source = audioContextRef.current.createBufferSource();
 //       source.buffer = audioBuffer;
 //       source.connect(audioContextRef.current.destination);
@@ -460,19 +416,16 @@
 //   };
 
 //   const playAudioDelta = async (base64Delta: string) => {
-//     // This function is deprecated - we now use storeAudioChunk and playAccumulatedAudio
 //     console.warn('playAudioDelta called but is deprecated');
 //   };
 
 //   const playNextAudio = () => {
-//     // This function is deprecated - we now play complete audio at once
 //     console.warn('playNextAudio called but is deprecated');
 //   };
 
 //   const stopAgentAudio = () => {
 //     console.log('🛑 Stopping agent audio');
     
-//     // Clear all audio-related state
 //     audioQueueRef.current = [];
 //     allAudioChunksRef.current = [];
 //     isPlayingRef.current = false;
@@ -569,7 +522,7 @@
 //       if (!verifyResponse.ok) throw new Error('Verification failed');
 //       const verificationResult = await verifyResponse.json();
 
-//       // Add "Hmmmmmmmm..." message after validation
+//       // Add "Hmmmmmmmm..." to UI
 //       addAgentMessage('Hmmmmmmmm...');
 
 //       if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
@@ -583,21 +536,30 @@
 //       console.log('🔓 Re-enabling conversation after verification');
 //       setConversationEnabled(true);
 
+//       // Send "Hmmmm" to voice agent to speak
 //       wsRef.current?.send(JSON.stringify({
-//         type: 'verification_result',
-//         documentType: currentStep,
-//         fileName: file.name,
-//         recordId,
-//         verificationData: {
-//           confidence: verificationResult.confidence,
-//           extractedData: verificationResult.extractedData || {},
-//           aiAnalysis: verificationResult.aiAnalysis,
-//           isValid: verificationResult.isValid,
-//           issues: verificationResult.issues || [],
-//           nameMatch: verificationResult.nameMatch || false,
-//           extractedName: verificationResult.extractedName || '',
-//         }
+//         type: 'speak_message',
+//         message: 'Hmmmmmmmm'
 //       }));
+
+//       // Wait for "Hmmmm" to be spoken, then send verification result
+//       setTimeout(() => {
+//         wsRef.current?.send(JSON.stringify({
+//           type: 'verification_result',
+//           documentType: currentStep,
+//           fileName: file.name,
+//           recordId,
+//           verificationData: {
+//             confidence: verificationResult.confidence,
+//             extractedData: verificationResult.extractedData || {},
+//             aiAnalysis: verificationResult.aiAnalysis,
+//             isValid: verificationResult.isValid,
+//             issues: verificationResult.issues || [],
+//             nameMatch: verificationResult.nameMatch || false,
+//             extractedName: verificationResult.extractedName || '',
+//           }
+//         }));
+//       }, 1500);
 
 //       if (verificationResult.nameMatch === false) {
 //         let nameMismatchMessage = `❌ NAME VERIFICATION FAILED\n\n`;
@@ -891,7 +853,7 @@
 //             <p style={{ color: '#6b7280', marginBottom: '35px', fontSize: '15px' }}>
 //               Our initial onboarding steps are now complete.
 // Today, we have:
-// Given you an overview of your first week’s schedule and key meetings, and
+// Given you an overview of your first week's schedule and key meetings, and
 // Collected your Identity Proof for verification.
 // As next steps, please:
 // Check your email and calendar for your meeting invites,
@@ -954,12 +916,6 @@
 //     };
 //   }
 // };
-
-
-
-
-
-
 
 
 
@@ -1030,9 +986,9 @@ Welcome to your new journey with your new role at this new place.
 I am your AI onboarding assistant, and I will help you get started with your first week here.
 
 In this short session, I will do three things for you:
-• Welcome you and give you a quick overview of your first week's schedule  
-• Explain the key meetings you will attend  
-• Guide you through your document verification  
+- Welcome you and give you a quick overview of your first week's schedule  
+- Explain the key meetings you will attend  
+- Guide you through your document verification  
 
 During your first week, you will have an Orientation Session to understand the company, an HR Session to review policies and procedures, and a Manager Session where you will receive clarity on your role and responsibilities.
 
@@ -1546,7 +1502,7 @@ Now that you have an overview of your first week, let us complete your document 
       }
 
       if (!verificationResult.isValid || verificationResult.confidence < 0.7) {
-        let failureMessage = `❌ Verification failed (${(verificationResult.confidence * 100).toFixed(0)}% confidence).\n\n`;
+        let failureMessage = `❌ Verification failed.\n\n`;
         failureMessage += `${verificationResult.aiAnalysis}\n\n`;
         
         if (verificationResult.issues && verificationResult.issues.length > 0) {
@@ -1577,8 +1533,7 @@ Now that you have an overview of your first week, let us complete your document 
       }
 
       let successMessage = `✅ ${getDocumentLabel(currentStep)} verified successfully!\n\n`;
-      successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n`;
-      successMessage += `**Confidence Score:** ${(verificationResult.confidence * 100).toFixed(0)}%\n\n`;
+      successMessage += `**Name Verified:** ${verificationResult.extractedName || candidateName} ✓\n\n`;
       
       if (Object.keys(verificationResult.extractedData).length > 0) {
         successMessage += '**Extracted Information:**\n';
